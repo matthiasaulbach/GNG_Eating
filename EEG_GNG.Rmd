@@ -1,9 +1,12 @@
 ---
 title: "EEG GNG"
-output: 
+output:
+  html_document:
+    df_print: paged
+    toc: yes
   pdf_document:
-    toc: true
-    number_sections: true
+    number_sections: yes
+    toc: yes
 ---
 
 ```{r setup, include=FALSE, error=FALSE, warning=FALSE, echo=FALSE}
