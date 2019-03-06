@@ -2,16 +2,17 @@
 title: "EEG GNG"
 output:
   html_document:
+    number_sections: yes
     df_print: paged
     toc: yes
+    toc_float: true
   pdf_document:
     number_sections: yes
     toc: yes
-    toc_float: true
 ---
 
-```{r setup, include=FALSE, error=FALSE, warning=FALSE, echo=FALSE, hide = TRUE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, include=FALSE, error=FALSE, warning=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE, include=FALSE, error=FALSE, warning=FALSE, hide = TRUE)
 pacman::p_load(tidyverse, rprime, wrapr, ggplot2, xlsx, here, lmerTest)
 test_dats_raw <- readRDS("E-Prime data/raw_RT_data.rds")
 ```
