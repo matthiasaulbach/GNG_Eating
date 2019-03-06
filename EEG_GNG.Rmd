@@ -2,6 +2,7 @@
 title: "EEG GNG"
 output:
   html_document:
+    code_folding: hide
     number_sections: yes
     df_print: paged
     toc: yes
@@ -12,7 +13,7 @@ output:
 ---
 
 ```{r setup, include=FALSE, error=FALSE, warning=FALSE, echo=FALSE}
-knitr::opts_chunk$set(echo = TRUE, include=FALSE, error=FALSE, warning=FALSE, hide = TRUE)
+knitr::opts_chunk$set(echo = TRUE, error=FALSE, warning=FALSE)
 pacman::p_load(tidyverse, rprime, wrapr, ggplot2, xlsx, here, lmerTest)
 test_dats_raw <- readRDS("E-Prime data/raw_RT_data.rds")
 ```
