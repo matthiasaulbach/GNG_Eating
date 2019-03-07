@@ -1,2 +1,3 @@
 # GNG_Eating
-Now let's see how I can get those changes up on Github.
+So this is the Github repository for the GNG Eating study.
+Find a whole lot of data analysis here: https://matthiasaulbach.github.io/GNG_Eating/EEG_GNG
