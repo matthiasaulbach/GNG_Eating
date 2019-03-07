@@ -690,6 +690,17 @@ summary(lm(total_in_lab ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overal
 summary(lm(total_in_lab ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
 summary(lm(total_in_lab ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier_notdaily == "0")))
 # No effect
+
+## And, last but not least, for an average across electrode sites
+full_withERP$ERPBaselineDiff_allsites <- 
+  rowMeans(full_withERP[c("BaselineDiff_Cz", "BaselineDiff_FC1", "BaselineDiff_FC2", "BaselineDiff_Fz")])
+## Regression for diary intake
+summary(lm(Daily_intake ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
+summary(lm(Daily_intake ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
+## And for lab food intake
+summary(lm(total_in_lab ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
+summary(lm(total_in_lab ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
+summary(lm(total_in_lab ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier_notdaily == "0")))
 ```
 
 None of the electrode sites show an effect (whether we include outliers or not), so we can confidently conclude that N2-baseline bias was not predictive of food intake inside and outside the laboratory.
@@ -931,3 +942,52 @@ ggplot(data = subset(full_withERP, outlier==0),
 ```
 
 But no significant relation left after removing outliers.
+
+# Relation between N2 differences and training effects
+So now we check whether the difference between intake after High-Calorie Go and Low-Calorie Go is related to the N2 difference score (the score from hypothesis 3).
+
+```{r}
+summary(lm(lab_food_diff ~ ERPBaselineDiff_allsites, data = full_withERP))
+```
+
+There is no relation between these two.
+
+## Without outliers
+```{r}
+summary(lm(lab_food_diff ~ ERPBaselineDiff_allsites, data = subset(full_withERP, outlier==0)))
+summary(lm(lab_food_diff ~ ERPBaselineDiff_allsites, data = subset(full_withERP, outlier_notdaily==0)))
+```
+
+And removing outliers doesn't change anything about that.
+
+# N2-change values
+
+Let's create a variable indicating the change in N2-bias from Cycle 1 to Cycle 2 in the training blocks (an indidvidual "training score" if you will).
+
+```{r}
+full_withERP$N2_bias_change_LowCalGo_Cz <- (full_withERP$LowCalGo_DiffCz_1 - full_withERP$LowCalGo_DiffCz_2)
+full_withERP$N2_bias_change_HighCalGo_Cz <- (full_withERP$HighCalGo_DiffCz_1 - full_withERP$HighCalGo_DiffCz_2)
+full_withERP$N2_bias_change_LowCalGo_FC1 <- (full_withERP$LowCalGo_DiffFC1_1 - full_withERP$LowCalGo_DiffFC1_2)
+full_withERP$N2_bias_change_HighCalGo_FC1 <- (full_withERP$HighCalGo_DiffFC1_1 - full_withERP$HighCalGo_DiffFC1_2)
+full_withERP$N2_bias_change_LowCalGo_FC2 <- (full_withERP$LowCalGo_DiffFC2_1 - full_withERP$LowCalGo_DiffFC2_2)
+full_withERP$N2_bias_change_HighCalGo_FC2 <- (full_withERP$HighCalGo_DiffFC2_1 - full_withERP$HighCalGo_DiffFC2_2)
+full_withERP$N2_bias_change_LowCalGo_Fz <- (full_withERP$LowCalGo_DiffFz_1 - full_withERP$LowCalGo_DiffFz_2)
+full_withERP$N2_bias_change_HighCalGo_Fz <- (full_withERP$HighCalGo_DiffFz_1 - full_withERP$HighCalGo_DiffFz_2)
+# And create a mean value across electrode sites
+full_withERP$N2_bias_change_LowCalGo <- 
+  rowMeans(full_withERP[c("N2_bias_change_LowCalGo_Cz", "N2_bias_change_LowCalGo_FC1", "N2_bias_change_LowCalGo_FC2", "N2_bias_change_LowCalGo_Fz")])
+full_withERP$N2_bias_change_HighCalGo <- 
+  rowMeans(full_withERP[c("N2_bias_change_HighCalGo_Cz", "N2_bias_change_HighCalGo_FC1", "N2_bias_change_HighCalGo_FC2", "N2_bias_change_HighCalGo_Fz")])
+```
+
+And let's see how these "training scores" relate to food intake:
+
+```{r}
+# For the learning scores in the LowCalGo block
+summary(lm(Daily_intake ~ N2_bias_change_LowCalGo, data = full_withERP))
+# For the learning scores in the LowCalGo block
+summary(lm(Daily_intake ~ N2_bias_change_HighCalGo, data = full_withERP))
+
+``` 
+
+
