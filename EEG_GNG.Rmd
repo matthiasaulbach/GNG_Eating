@@ -326,6 +326,29 @@ ERP_long$outlier <- full_withERP$outlier
 ERP_long$outlier_notdaily <- full_withERP$outlier_notdaily
 ```
 
+Here is the distribution of N2 amplitudes by block. The error bars indicate mean +/- 3sd so we might consider those points outside those limits as outliers (It's messy with the labels but we only need to identify the ones at the extremes anyway).
+
+```{r}
+ERP_long_allsites <- ERP_long %>%
+  spread(., Electrode, Value) %>%
+  rowwise %>%
+  mutate(Value = mean(Cz:Fz))
+  
+ERP_long_summary <- ERP_long_allsites %>% 
+  group_by(HighLow, GoNo, Block) %>% 
+  summarise_at("Value", funs(mean, sd))
+colnames(ERP_long_summary)[colnames(ERP_long_summary) == "mean"] <- "Value"
+
+ggplot(ERP_long_allsites, aes(x = HighLow, y = Value, color = GoNo)) + 
+  geom_point(alpha = .3, position = position_jitter(width = 0.2, height = 0)) +
+  facet_wrap(facets = "Block") + 
+  geom_point(data = ERP_long_summary, stat = "identity", size = 5, alpha = 1) + 
+  geom_errorbar(data = ERP_long_summary, aes(ymin = (Value-3*sd), ymax = (Value+3*sd)), width = 0.3) +
+  geom_text(aes(label = pp))
+```
+
+Looks like participant 10 is somewhat off but only in the Balanced block is he/she outside the +/- 3 sd range.
+
 # Graphs
 
 Just some graphs and stuff to get an idea about the behavioral data.
@@ -438,8 +461,6 @@ ggplot(by_block_cycle_noout, aes(x = Cycle, y = RT, color = HighLow)) +
   ylim(250, 500)
   
 ```
-
-
 
 
 
