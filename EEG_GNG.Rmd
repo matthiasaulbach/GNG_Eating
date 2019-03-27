@@ -14,7 +14,8 @@ output:
 
 ```{r setup, include=FALSE, error=FALSE, warning=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE, error=FALSE, warning=FALSE)
-pacman::p_load(tidyverse, rprime, wrapr, ggplot2, xlsx, here, lmerTest)
+pacman::p_load(tidyverse, rprime, wrapr, ggplot2, xlsx, here, lmerTest, afex)
+options(scipen=999)
 test_dats_raw <- readRDS("E-Prime data/raw_RT_data.rds")
 ```
 
@@ -84,22 +85,23 @@ food_evals <- test_dats_raw %>%
 ###### Read in all the other data
 food_hunger_lasteaten <- readRDS("./diaries/food_hunger_lasteaten.rds")
 ###### And the ERP data:
-ERP_tidy <- readRDS("ERP_tidy_200to290.rds")
+ERP_tidy <- readRDS("ERP_tidy_individual_averages.rds")
+
 # Creating the baseline difference scores
 ## since there are two values for each electrode and trial type (the two cycles), I average across those
 ERP_tidy <- ERP_tidy %>%
   mutate(BaselineDiff_Cz = 
-           (((High_No.1.Balanced.Cz_200to290 + High_No.2.Balanced.Cz_200to290)/2) - ((High_Go.1.Balanced.Cz_200to290 + High_Go.2.Balanced.Cz_200to290)/2)) -
-           (((Low_No.1.Balanced.Cz_200to290 + Low_No.2.Balanced.Cz_200to290)/2) - ((Low_Go.1.Balanced.Cz_200to290 + Low_Go.2.Balanced.Cz_200to290)/2)),
+           (((High_No.1.Balanced.Cz + High_No.2.Balanced.Cz)/2) - ((High_Go.1.Balanced.Cz + High_Go.2.Balanced.Cz)/2)) -
+           (((Low_No.1.Balanced.Cz + Low_No.2.Balanced.Cz)/2) - ((Low_Go.1.Balanced.Cz + Low_Go.2.Balanced.Cz)/2)),
          BaselineDiff_FC1 = 
-           (((High_No.1.Balanced.FC1_200to290 + High_No.2.Balanced.FC1_200to290)/2) - ((High_Go.1.Balanced.FC1_200to290 + High_Go.2.Balanced.FC1_200to290)/2)) -
-           (((Low_No.1.Balanced.FC1_200to290 + Low_No.2.Balanced.FC1_200to290)/2) - ((Low_Go.1.Balanced.FC1_200to290 + Low_Go.2.Balanced.FC1_200to290)/2)),
+           (((High_No.1.Balanced.FC1 + High_No.2.Balanced.FC1)/2) - ((High_Go.1.Balanced.FC1 + High_Go.2.Balanced.FC1)/2)) -
+           (((Low_No.1.Balanced.FC1 + Low_No.2.Balanced.FC1)/2) - ((Low_Go.1.Balanced.FC1 + Low_Go.2.Balanced.FC1)/2)),
          BaselineDiff_FC2 = 
-           (((High_No.1.Balanced.FC2_200to290 + High_No.2.Balanced.FC2_200to290)/2) - ((High_Go.1.Balanced.FC2_200to290 + High_Go.2.Balanced.FC2_200to290)/2)) -
-           (((Low_No.1.Balanced.FC2_200to290 + Low_No.2.Balanced.FC2_200to290)/2) - ((Low_Go.1.Balanced.FC2_200to290 + Low_Go.2.Balanced.FC2_200to290)/2)),
+           (((High_No.1.Balanced.FC2 + High_No.2.Balanced.FC2)/2) - ((High_Go.1.Balanced.FC2 + High_Go.2.Balanced.FC2)/2)) -
+           (((Low_No.1.Balanced.FC2 + Low_No.2.Balanced.FC2)/2) - ((Low_Go.1.Balanced.FC2 + Low_Go.2.Balanced.FC2)/2)),
          BaselineDiff_Fz = 
-           (((High_No.1.Balanced.Fz_200to290 + High_No.2.Balanced.Fz_200to290)/2) - ((High_Go.1.Balanced.Fz_200to290 + High_Go.2.Balanced.Fz_200to290)/2)) -
-           (((Low_No.1.Balanced.Fz_200to290 + Low_No.2.Balanced.Fz_200to290)/2) - ((Low_Go.1.Balanced.Fz_200to290 + Low_Go.2.Balanced.Fz_200to290)/2)),
+           (((High_No.1.Balanced.Fz + High_No.2.Balanced.Fz)/2) - ((High_Go.1.Balanced.Fz + High_Go.2.Balanced.Fz)/2)) -
+           (((Low_No.1.Balanced.Fz + Low_No.2.Balanced.Fz)/2) - ((Low_Go.1.Balanced.Fz + Low_Go.2.Balanced.Fz)/2)),
          BaselineDiff_allsites = 
            ((HighNo.Balanced.allsites - HighGo.Balanced.allsites) - (LowNo.Balanced.allsites - LowGo.Balanced.allsites))
   )
@@ -178,56 +180,56 @@ I'll just leave the code here to see so we know how outliers were defined.
 full_withERP <- subset(full_withERP, Subject != 12)
 ## I can't use the tidy dataframe for detecting outliers. I  need the data to be organised in a different way
 ERP_long <- ERP_tidy %>%
-  select(., - c("LowCalGo_DiffCz_1":"Subject")) %>%
-  mutate(High_No_Balanced_Cz = ((High_No.1.Balanced.Cz_200to290 + High_No.2.Balanced.Cz_200to290)/2),
-         High_Go_Balanced_Cz = ((High_Go.1.Balanced.Cz_200to290 + High_Go.2.Balanced.Cz_200to290)/2),
-         Low_No_Balanced_Cz = ((Low_No.1.Balanced.Cz_200to290 + Low_No.2.Balanced.Cz_200to290)/2),
-         Low_Go_Balanced_Cz = ((Low_Go.1.Balanced.Cz_200to290 + Low_Go.2.Balanced.Cz_200to290)/2),
-         High_No_HighCalGo_Cz = ((High_No.1.HighCalGo.Cz_200to290 + High_No.2.HighCalGo.Cz_200to290)/2),
-         High_Go_HighCalGo_Cz = ((High_Go.1.HighCalGo.Cz_200to290 + High_Go.2.HighCalGo.Cz_200to290)/2),
-         Low_No_HighCalGo_Cz = ((Low_No.1.HighCalGo.Cz_200to290 + Low_No.2.HighCalGo.Cz_200to290)/2),
-         Low_Go_HighCalGo_Cz = ((Low_Go.1.HighCalGo.Cz_200to290 + Low_Go.2.HighCalGo.Cz_200to290)/2),
-         High_No_LowCalGo_Cz = ((High_No.1.LowCalGo.Cz_200to290 + High_No.2.LowCalGo.Cz_200to290)/2),
-         High_Go_LowCalGo_Cz = ((High_Go.1.LowCalGo.Cz_200to290 + High_Go.2.LowCalGo.Cz_200to290)/2),
-         Low_No_LowCalGo_Cz = ((Low_No.1.LowCalGo.Cz_200to290 + Low_No.2.LowCalGo.Cz_200to290)/2),
-         Low_Go_LowCalGo_Cz = ((Low_Go.1.LowCalGo.Cz_200to290 + Low_Go.2.LowCalGo.Cz_200to290)/2),
-         High_No_Balanced_FC1 = ((High_No.1.Balanced.FC1_200to290 + High_No.2.Balanced.FC1_200to290)/2),
-         High_Go_Balanced_FC1 = ((High_Go.1.Balanced.FC1_200to290 + High_Go.2.Balanced.FC1_200to290)/2),
-         Low_No_Balanced_FC1 = ((Low_No.1.Balanced.FC1_200to290 + Low_No.2.Balanced.FC1_200to290)/2),
-         Low_Go_Balanced_FC1 = ((Low_Go.1.Balanced.FC1_200to290 + Low_Go.2.Balanced.FC1_200to290)/2),
-         High_No_HighCalGo_FC1 = ((High_No.1.HighCalGo.FC1_200to290 + High_No.2.HighCalGo.FC1_200to290)/2),
-         High_Go_HighCalGo_FC1 = ((High_Go.1.HighCalGo.FC1_200to290 + High_Go.2.HighCalGo.FC1_200to290)/2),
-         Low_No_HighCalGo_FC1 = ((Low_No.1.HighCalGo.FC1_200to290 + Low_No.2.HighCalGo.FC1_200to290)/2),
-         Low_Go_HighCalGo_FC1 = ((Low_Go.1.HighCalGo.FC1_200to290 + Low_Go.2.HighCalGo.FC1_200to290)/2),
-         High_No_LowCalGo_FC1 = ((High_No.1.LowCalGo.FC1_200to290 + High_No.2.LowCalGo.FC1_200to290)/2),
-         High_Go_LowCalGo_FC1 = ((High_Go.1.LowCalGo.FC1_200to290 + High_Go.2.LowCalGo.FC1_200to290)/2),
-         Low_No_LowCalGo_FC1 = ((Low_No.1.LowCalGo.FC1_200to290 + Low_No.2.LowCalGo.FC1_200to290)/2),
-         Low_Go_LowCalGo_FC1 = ((Low_Go.1.LowCalGo.FC1_200to290 + Low_Go.2.LowCalGo.FC1_200to290)/2),
-         High_No_Balanced_FC2 = ((High_No.1.Balanced.FC2_200to290 + High_No.2.Balanced.FC2_200to290)/2),
-         High_Go_Balanced_FC2 = ((High_Go.1.Balanced.FC2_200to290 + High_Go.2.Balanced.FC2_200to290)/2),
-         Low_No_Balanced_FC2 = ((Low_No.1.Balanced.FC2_200to290 + Low_No.2.Balanced.FC2_200to290)/2),
-         Low_Go_Balanced_FC2 = ((Low_Go.1.Balanced.FC2_200to290 + Low_Go.2.Balanced.FC2_200to290)/2),
-         High_No_HighCalGo_FC2 = ((High_No.1.HighCalGo.FC2_200to290 + High_No.2.HighCalGo.FC2_200to290)/2),
-         High_Go_HighCalGo_FC2 = ((High_Go.1.HighCalGo.FC2_200to290 + High_Go.2.HighCalGo.FC2_200to290)/2),
-         Low_No_HighCalGo_FC2 = ((Low_No.1.HighCalGo.FC2_200to290 + Low_No.2.HighCalGo.FC2_200to290)/2),
-         Low_Go_HighCalGo_FC2 = ((Low_Go.1.HighCalGo.FC2_200to290 + Low_Go.2.HighCalGo.FC2_200to290)/2),
-         High_No_LowCalGo_FC2 = ((High_No.1.LowCalGo.FC2_200to290 + High_No.2.LowCalGo.FC2_200to290)/2),
-         High_Go_LowCalGo_FC2 = ((High_Go.1.LowCalGo.FC2_200to290 + High_Go.2.LowCalGo.FC2_200to290)/2),
-         Low_No_LowCalGo_FC2 = ((Low_No.1.LowCalGo.FC2_200to290 + Low_No.2.LowCalGo.FC2_200to290)/2),
-         Low_Go_LowCalGo_FC2 = ((Low_Go.1.LowCalGo.FC2_200to290 + Low_Go.2.LowCalGo.FC2_200to290)/2),
-         High_No_Balanced_Fz = ((High_No.1.Balanced.Fz_200to290 + High_No.2.Balanced.Fz_200to290)/2),
-         High_Go_Balanced_Fz = ((High_Go.1.Balanced.Fz_200to290 + High_Go.2.Balanced.Fz_200to290)/2),
-         Low_No_Balanced_Fz = ((Low_No.1.Balanced.Fz_200to290 + Low_No.2.Balanced.Fz_200to290)/2),
-         Low_Go_Balanced_Fz = ((Low_Go.1.Balanced.Fz_200to290 + Low_Go.2.Balanced.Fz_200to290)/2),
-         High_No_HighCalGo_Fz = ((High_No.1.HighCalGo.Fz_200to290 + High_No.2.HighCalGo.Fz_200to290)/2),
-         High_Go_HighCalGo_Fz = ((High_Go.1.HighCalGo.Fz_200to290 + High_Go.2.HighCalGo.Fz_200to290)/2),
-         Low_No_HighCalGo_Fz = ((Low_No.1.HighCalGo.Fz_200to290 + Low_No.2.HighCalGo.Fz_200to290)/2),
-         Low_Go_HighCalGo_Fz = ((Low_Go.1.HighCalGo.Fz_200to290 + Low_Go.2.HighCalGo.Fz_200to290)/2),
-         High_No_LowCalGo_Fz = ((High_No.1.LowCalGo.Fz_200to290 + High_No.2.LowCalGo.Fz_200to290)/2),
-         High_Go_LowCalGo_Fz = ((High_Go.1.LowCalGo.Fz_200to290 + High_Go.2.LowCalGo.Fz_200to290)/2),
-         Low_No_LowCalGo_Fz = ((Low_No.1.LowCalGo.Fz_200to290 + Low_No.2.LowCalGo.Fz_200to290)/2),
-         Low_Go_LowCalGo_Fz = ((Low_Go.1.LowCalGo.Fz_200to290 + Low_Go.2.LowCalGo.Fz_200to290)/2)) %>%
-  select(-c(High_Go.1.Balanced.Cz_200to290:Low_No.2.LowCalGo.Fz_200to290)) %>%
+  select(., - c("BaselineDiff_Cz":"Subject")) %>%
+  mutate(High_No_Balanced_Cz = ((High_No.1.Balanced.Cz + High_No.2.Balanced.Cz)/2),
+         High_Go_Balanced_Cz = ((High_Go.1.Balanced.Cz + High_Go.2.Balanced.Cz)/2),
+         Low_No_Balanced_Cz = ((Low_No.1.Balanced.Cz + Low_No.2.Balanced.Cz)/2),
+         Low_Go_Balanced_Cz = ((Low_Go.1.Balanced.Cz + Low_Go.2.Balanced.Cz)/2),
+         High_No_HighCalGo_Cz = ((High_No.1.HighCalGo.Cz + High_No.2.HighCalGo.Cz)/2),
+         High_Go_HighCalGo_Cz = ((High_Go.1.HighCalGo.Cz + High_Go.2.HighCalGo.Cz)/2),
+         Low_No_HighCalGo_Cz = ((Low_No.1.HighCalGo.Cz + Low_No.2.HighCalGo.Cz)/2),
+         Low_Go_HighCalGo_Cz = ((Low_Go.1.HighCalGo.Cz + Low_Go.2.HighCalGo.Cz)/2),
+         High_No_LowCalGo_Cz = ((High_No.1.LowCalGo.Cz + High_No.2.LowCalGo.Cz)/2),
+         High_Go_LowCalGo_Cz = ((High_Go.1.LowCalGo.Cz + High_Go.2.LowCalGo.Cz)/2),
+         Low_No_LowCalGo_Cz = ((Low_No.1.LowCalGo.Cz + Low_No.2.LowCalGo.Cz)/2),
+         Low_Go_LowCalGo_Cz = ((Low_Go.1.LowCalGo.Cz + Low_Go.2.LowCalGo.Cz)/2),
+         High_No_Balanced_FC1 = ((High_No.1.Balanced.FC1 + High_No.2.Balanced.FC1)/2),
+         High_Go_Balanced_FC1 = ((High_Go.1.Balanced.FC1 + High_Go.2.Balanced.FC1)/2),
+         Low_No_Balanced_FC1 = ((Low_No.1.Balanced.FC1 + Low_No.2.Balanced.FC1)/2),
+         Low_Go_Balanced_FC1 = ((Low_Go.1.Balanced.FC1 + Low_Go.2.Balanced.FC1)/2),
+         High_No_HighCalGo_FC1 = ((High_No.1.HighCalGo.FC1 + High_No.2.HighCalGo.FC1)/2),
+         High_Go_HighCalGo_FC1 = ((High_Go.1.HighCalGo.FC1 + High_Go.2.HighCalGo.FC1)/2),
+         Low_No_HighCalGo_FC1 = ((Low_No.1.HighCalGo.FC1 + Low_No.2.HighCalGo.FC1)/2),
+         Low_Go_HighCalGo_FC1 = ((Low_Go.1.HighCalGo.FC1 + Low_Go.2.HighCalGo.FC1)/2),
+         High_No_LowCalGo_FC1 = ((High_No.1.LowCalGo.FC1 + High_No.2.LowCalGo.FC1)/2),
+         High_Go_LowCalGo_FC1 = ((High_Go.1.LowCalGo.FC1 + High_Go.2.LowCalGo.FC1)/2),
+         Low_No_LowCalGo_FC1 = ((Low_No.1.LowCalGo.FC1 + Low_No.2.LowCalGo.FC1)/2),
+         Low_Go_LowCalGo_FC1 = ((Low_Go.1.LowCalGo.FC1 + Low_Go.2.LowCalGo.FC1)/2),
+         High_No_Balanced_FC2 = ((High_No.1.Balanced.FC2 + High_No.2.Balanced.FC2)/2),
+         High_Go_Balanced_FC2 = ((High_Go.1.Balanced.FC2 + High_Go.2.Balanced.FC2)/2),
+         Low_No_Balanced_FC2 = ((Low_No.1.Balanced.FC2 + Low_No.2.Balanced.FC2)/2),
+         Low_Go_Balanced_FC2 = ((Low_Go.1.Balanced.FC2 + Low_Go.2.Balanced.FC2)/2),
+         High_No_HighCalGo_FC2 = ((High_No.1.HighCalGo.FC2 + High_No.2.HighCalGo.FC2)/2),
+         High_Go_HighCalGo_FC2 = ((High_Go.1.HighCalGo.FC2 + High_Go.2.HighCalGo.FC2)/2),
+         Low_No_HighCalGo_FC2 = ((Low_No.1.HighCalGo.FC2 + Low_No.2.HighCalGo.FC2)/2),
+         Low_Go_HighCalGo_FC2 = ((Low_Go.1.HighCalGo.FC2 + Low_Go.2.HighCalGo.FC2)/2),
+         High_No_LowCalGo_FC2 = ((High_No.1.LowCalGo.FC2 + High_No.2.LowCalGo.FC2)/2),
+         High_Go_LowCalGo_FC2 = ((High_Go.1.LowCalGo.FC2 + High_Go.2.LowCalGo.FC2)/2),
+         Low_No_LowCalGo_FC2 = ((Low_No.1.LowCalGo.FC2 + Low_No.2.LowCalGo.FC2)/2),
+         Low_Go_LowCalGo_FC2 = ((Low_Go.1.LowCalGo.FC2 + Low_Go.2.LowCalGo.FC2)/2),
+         High_No_Balanced_Fz = ((High_No.1.Balanced.Fz + High_No.2.Balanced.Fz)/2),
+         High_Go_Balanced_Fz = ((High_Go.1.Balanced.Fz + High_Go.2.Balanced.Fz)/2),
+         Low_No_Balanced_Fz = ((Low_No.1.Balanced.Fz + Low_No.2.Balanced.Fz)/2),
+         Low_Go_Balanced_Fz = ((Low_Go.1.Balanced.Fz + Low_Go.2.Balanced.Fz)/2),
+         High_No_HighCalGo_Fz = ((High_No.1.HighCalGo.Fz + High_No.2.HighCalGo.Fz)/2),
+         High_Go_HighCalGo_Fz = ((High_Go.1.HighCalGo.Fz + High_Go.2.HighCalGo.Fz)/2),
+         Low_No_HighCalGo_Fz = ((Low_No.1.HighCalGo.Fz + Low_No.2.HighCalGo.Fz)/2),
+         Low_Go_HighCalGo_Fz = ((Low_Go.1.HighCalGo.Fz + Low_Go.2.HighCalGo.Fz)/2),
+         High_No_LowCalGo_Fz = ((High_No.1.LowCalGo.Fz + High_No.2.LowCalGo.Fz)/2),
+         High_Go_LowCalGo_Fz = ((High_Go.1.LowCalGo.Fz + High_Go.2.LowCalGo.Fz)/2),
+         Low_No_LowCalGo_Fz = ((Low_No.1.LowCalGo.Fz + Low_No.2.LowCalGo.Fz)/2),
+         Low_Go_LowCalGo_Fz = ((Low_Go.1.LowCalGo.Fz + Low_Go.2.LowCalGo.Fz)/2)) %>%
+  select(-c(High_Go.1.Balanced.Cz:Low_No.2.LowCalGo.Fz)) %>%
   gather("Variable", "Value", High_No_Balanced_Cz:Low_Go_LowCalGo_Fz) %>%
   separate(Variable, c("HighLow", "GoNo", "Block", "Electrode"))
     
@@ -347,7 +349,7 @@ ggplot(ERP_long_allsites, aes(x = HighLow, y = Value, color = GoNo)) +
   geom_text(aes(label = pp))
 ```
 
-Looks like participant 10 is somewhat off but only in the Balanced block is he/she outside the +/- 3 sd range.
+Looks like no participant is outside the +/- 3 sd range.
 
 # Graphs
 
@@ -470,56 +472,43 @@ So here's the test for the first hypothesis:
 
 ```{r}
 # Let's test our first hypothesis about the interaction between stimulus type and trial type in the balanced block
-fit_ERP_baseline <- lmerTest::lmer(Value ~ HighLow*GoNo + (1|pp),
-                                      data=subset(ERP_long, Block == "Balanced"))
-anova_ERP_baseline <- anova(fit_ERP_baseline)
-anova_ERP_baseline
-summary(fit_ERP_baseline)
-
-ggplot(ERP_long, aes(x = HighLow, y = Value, color = GoNo)) + geom_boxplot()
+aov_car(Value ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
+        data=subset(ERP_long, Block == "Balanced"))
 
 # So we have a significant effect of Go/No-Go but no interaction. 
+
 ERP_long_summary_Balanced <- subset(ERP_long, Block == "Balanced") %>% group_by(HighLow, GoNo) %>% summarise_at("Value", funs(mean, sd))
 # Looks like Low-calorie No-Go trials provoke the largest N2
 ggplot(ERP_long_summary_Balanced, aes(x = HighLow, y = mean, color = GoNo, group = GoNo)) +
   geom_point() + 
-  geom_errorbar(aes(ymin = mean-2*(sd/49), ymax = mean+2*(sd/49)), inherit = TRUE, width = 0.1) +
-  ylim(-4, -1)
+  geom_line(stat="identity") +
+  geom_errorbar(aes(ymin = mean-2*(sd/nrow(ERP_tidy)), ymax = mean+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1)
 ```
+
+(NB: removing the participants with no and/or reversed GNG effect did not change results)
 
 ## Without different outlier criteria:
 
 ```{r}
 # Without any outliers
-fit_ERP_baseline <- lmerTest::lmer(Value ~ HighLow*GoNo + (1|pp),
-                                      data=subset(ERP_long, (Block == "Balanced" & outlier == "0")))
-anova_ERP_baseline <- anova(fit_ERP_baseline)
-anova_ERP_baseline
-summary(fit_ERP_baseline)
-
-ggplot(subset(ERP_long, (Block == "Balanced" & outlier == "0")), aes(x = HighLow, y = Value, color = GoNo)) + geom_boxplot()
+aov_car(Value ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
+        data=subset(ERP_long, (Block == "Balanced" & outlier == "0")))
 
 # So we have a significant effect of Go/No-Go and of High vs Low but no interaction. 
 subset(ERP_long, (Block == "Balanced" & outlier == "0")) %>% group_by(HighLow, GoNo) %>% summarise_at("Value", mean)
 # Looks like Low-calorie No-Go trials provoke the largest N2
 
 
-
 # Without outliers but with the diary outliers
-fit_ERP_baseline <- lmerTest::lmer(Value ~ HighLow*GoNo + (1|pp),
-                                      data=subset(ERP_long, (Block == "Balanced" & outlier_notdaily == "0")))
-anova_ERP_baseline <- anova(fit_ERP_baseline)
-anova_ERP_baseline
-summary(fit_ERP_baseline)
-
-ggplot(ERP_long, aes(x = HighLow, y = Value, color = GoNo)) + geom_boxplot()
+aov_car(Value ~ HighLow*GoNo + Error(pp/HighLow*GoNo), 
+        data=subset(ERP_long, (Block == "Balanced" & outlier_notdaily == "0")))
 
 # So we have a significant effect of Go/No-Go but no other effects
 subset(ERP_long, (Block == "Balanced" & outlier_notdaily == "0")) %>% group_by(HighLow, GoNo) %>% summarise_at("Value", mean)
 # Looks like Low-calorie No-Go trials provoke the largest N2
 ```
 
-Regardless of outliers we always find an effect of Go vs No with NoGo trials producing larger N2s (not surprisingly). Whether or not the main effect of food category becomes significant depends on which outliers we remove (not good!). However, the predicted interaction between Go/NoGo and food type is _never_ significant.
+Regardless of outliers we always find an effect of Go vs No with NoGo trials producing larger N2s (not surprisingly). However, the main effect of food type and the predicted interaction between Go/NoGo and food type are _never_ significant.
 
 # Hypothesis 2: Baseline RT differences
 
@@ -676,7 +665,7 @@ No significant effects for Cycle in the bias blocks.
 
 # Hypothesis 3: Predicting food intake with N2 differences
 
-To test hypothesis 3: predicting food intake with difference scores: (HighCalorie-NoGo - HighCalorieGo) - (LowCalorie-NoGo - LowCalorieGo).
+To test hypothesis 3: predicting food intake with baseline difference scores: (HighCalorie-NoGo - HighCalorieGo) - (LowCalorie-NoGo - LowCalorieGo).
 I always have the model including all participants and then when removing outliers.
 
 ```{r}
@@ -742,6 +731,8 @@ summary(lm(total_in_lab ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI
 
 None of the electrode sites show an effect (whether we include outliers or not), so we can confidently conclude that N2-baseline bias was not predictive of food intake inside and outside the laboratory.
 
+(NB: removing the participants with no and/or reversed GNG effect did not change results)
+
 # Hypothesis 4: Food intake outcomes.
 
 We see _higher_ food consumption after the _Low-Calorie-Go_ condition.
@@ -769,8 +760,11 @@ lab_intake_time <- select(full_withERP,
                      consumed_T1, 
                      consumed_T2) %>%
   gather("timepoint", "amount", -Subject)
+mean_lab_intake_time <- lab_intake_time %>%
+  group_by(timepoint) %>%
+  summarise_at(., "amount", funs(amount = mean))
 ggplot(lab_intake_time, aes(timepoint, amount, group = Subject, color = Subject)) + 
-  geom_point() +
+  geom_point(alpha = 0.3) +
   geom_line(stat = "identity")
 
 lab_intake_training <- select(full_withERP,
@@ -839,19 +833,16 @@ ggplot(lab_intake_training, aes(training, amount, group = Subject, color = Subje
 The hypothesis is that N2 becomes more pronounced with training, i.e. the values are more extreme in Cycle 2 than Cycle 1 and that this change is more pronounced for high calorie food (i.e. an interaction between differences with type of food).
 
 ```{r}
-ERP_anova_change <- ERP_tidy %>%
-  select(pp, LowCalGo_DiffCz_1:HighCalGo_DiffFz_2) %>%
+ERP_anova_change <- full_withERP %>%
+  select(pp, LowCalGo_DiffCz_1:HighCalGo_DiffFz_2, outlier, outlier_notdaily) %>%
   gather("Block.electrode.Cycle", "difference.score", LowCalGo_DiffCz_1:HighCalGo_DiffFz_2) %>%
   separate(col = Block.electrode.Cycle, into = c("Block", "Electrode", "Cycle"), sep = "_")
 
-fit_ERP_change <- lmerTest::lmer(difference.score ~ Block*Cycle + (1|pp), data=ERP_anova_change)
-anova_ERP_change <- anova(fit_ERP_change)
-anova_ERP_change
-summary(fit_ERP_change)
-## We have main effects for Block and Cycle (with later cycle showing stronger N2s) but no interaction effect.
+aov_car(difference.score ~ Block*Cycle + Error(pp/Block*Cycle), 
+        data=ERP_anova_change)
 
-ggplot(ERP_anova_change, aes(Block, difference.score, color = Cycle)) + 
-  geom_boxplot()
+## We have a main effect for Cycle (with later cycle showing stronger N2 difference scores) 
+## but no main effect of Block or interaction effect.
 
 summary_ERP_change <- ERP_anova_change %>% 
   group_by(Block, Cycle) %>% 
@@ -860,30 +851,24 @@ summary_ERP_change <- ERP_anova_change %>%
 ggplot(summary_ERP_change, aes(Cycle, mean, colour = Block, group = Block)) +
   geom_point() +
   geom_line(stat = "identity") +
-  scale_y_continuous(trans = "reverse") +
   geom_errorbar(aes(ymin = mean-2*(sd/49), ymax = mean+2*(sd/49)), inherit = TRUE, width = 0.1) +
   xlab("Time") +
   ylab("N2-difference score")
 ```
 
-So we _do_ see the expected main effect of Cycle, also a main effect of food type (with the Low-Calorie Go block leading to _larger_ N2-difference scores) but _no_ interaction.
+So we _do_ see the expected main effect of Cycle, but no main effect of Block and _no_ interaction.
 
+(NB: removing the participants with no and/or reversed GNG effect did not change results)
 
 ## Without outliers
 
 Without all kinds of outliers:
 
 ```{r}
-ERP_anova_change <- full_withERP %>%
-  select(pp, c(LowCalGo_DiffCz_1:HighCalGo_DiffFz_2, outlier, outlier_notdaily)) %>%
-  gather("Block.electrode.Cycle", "difference.score", LowCalGo_DiffCz_1:HighCalGo_DiffFz_2) %>%
-  separate(col = Block.electrode.Cycle, into = c("Block", "Electrode", "Cycle"), sep = "_")
+aov_car(difference.score ~ Block*Cycle + Error(pp/Block*Cycle), 
+        data=subset(ERP_anova_change, outlier == 0))
 
-fit_ERP_change <- lmerTest::lmer(difference.score ~ Block*Cycle + (1|pp), data=subset(ERP_anova_change, outlier == 0))
-anova_ERP_change <- anova(fit_ERP_change)
-anova_ERP_change
-summary(fit_ERP_change)
-## We have main effects for Block and Cycle (with later cycle showing stronger N2s) but no interaction effect.
+## Same as with outliers
 
 ggplot(subset(ERP_anova_change, outlier == 0), aes(Cycle, difference.score, color = Block)) + geom_boxplot()
 subset(ERP_anova_change, outlier == 0) %>% group_by(Block, Cycle) %>% summarise_at(., "difference.score", funs(mean, sd))
@@ -892,16 +877,10 @@ subset(ERP_anova_change, outlier == 0) %>% group_by(Block, Cycle) %>% summarise_
 And admitting the outlier criterion not including diary intake:
 
 ```{r}
-ERP_anova_change <- full_withERP %>%
-  select(pp, c(LowCalGo_DiffCz_1:HighCalGo_DiffFz_2, outlier, outlier_notdaily)) %>%
-  gather("Block.electrode.Cycle", "difference.score", LowCalGo_DiffCz_1:HighCalGo_DiffFz_2) %>%
-  separate(col = Block.electrode.Cycle, into = c("Block", "Electrode", "Cycle"), sep = "_")
+aov_car(difference.score ~ Block*Cycle + Error(pp/Block*Cycle), 
+        data=subset(ERP_anova_change, outlier_notdaily == 0))
 
-fit_ERP_change <- lmerTest::lmer(difference.score ~ Block*Cycle + (1|pp), data=subset(ERP_anova_change, outlier_notdaily == 0))
-anova_ERP_change <- anova(fit_ERP_change)
-anova_ERP_change
-summary(fit_ERP_change)
-## We have main effects for Block and Cycle (with later cycle showing stronger N2s) but no interaction effect.
+## And again the same.
 
 ggplot(subset(ERP_anova_change, outlier_notdaily == 0), aes(Cycle, difference.score, color = Block)) + geom_boxplot()
 subset(ERP_anova_change, outlier_notdaily == 0) %>% group_by(Block, Cycle) %>% summarise_at(., "difference.score", funs(mean, sd))
@@ -993,7 +972,7 @@ ggplot(data = subset(full_withERP, outlier==0),
 But no significant relation left after removing outliers.
 
 # Relation between N2 differences and training effects
-So now we check whether the difference between intake after High-Calorie Go and Low-Calorie Go is related to the N2 difference score (the score from hypothesis 3).
+So now we check whether the difference between intake after High-Calorie Go and Low-Calorie Go is related to the baseline N2 difference score (the score from hypothesis 3).
 
 ```{r}
 summary(lm(lab_food_diff ~ ERPBaselineDiff_allsites, data = full_withERP))
@@ -1042,46 +1021,7 @@ No significant relation.
 
 # N2 change values
 
-Now I want to create change scores for the different kinds of trials themselves (not for the difference as above). This way we can try to figure out more precisely what is happening.
-```{r}
-
-# IMPORTANT: these are now only the DOMINANT trials, i.e. those we want to work with!
-
-ERP_plot_by_trialtype <- full_withERP %>%
-  select(pp,
-         HighGo_1_HighCalGo.allsites,
-         HighGo_2_HighCalGo.allsites,
-         LowNo_1_HighCalGo.allsites,
-         LowNo_2_HighCalGo.allsites,
-         HighNo_1_LowCalGo.allsites,
-         HighNo_2_LowCalGo.allsites, 
-         LowGo_1_LowCalGo.allsites, 
-         LowGo_2_LowCalGo.allsites)%>%
-  gather("Trial.Cycle.Block", "N2", HighGo_1_HighCalGo.allsites:LowGo_2_LowCalGo.allsites) %>%
-  separate(col = Trial.Cycle.Block, into = c("Trial", "Cycle", "Block"), sep = "_")
-
-ggplot(ERP_plot_by_trialtype, aes(Cycle, N2, color = Trial)) +
-  geom_boxplot()
-
-
-ERP_plot_by_trialtype_by_Cycle_summary <- ERP_plot_by_trialtype %>% group_by(Trial, Cycle) %>% summarise_at(., "N2", funs(mean, sd))
-
-ggplot(ERP_plot_by_trialtype_by_Cycle_summary, aes(Cycle, mean, color = Trial, group = Trial)) +
-  geom_point() + 
-  geom_line(stat = "identity") + 
-  geom_errorbar(aes(ymin = mean-2*(sd/49), ymax = mean+2*(sd/49)), inherit = TRUE, width = 0.1) +
-  ggtitle("Mean N2 amplitude scores for the biased blocks (with SEs)")
-
-
-# This model tests the effects of trial type and Cycle on the N2 amplitude
-fit_bias_by_trial <- lmerTest::lmer(N2 ~ Trial*Cycle + (1|pp),
-                                      data=ERP_plot_by_trialtype)
-anova_bias_by_trial <- anova(fit_bias_by_trial)
-anova_bias_by_trial
-summary(fit_bias_by_trial)
-# We can see that HighNo trials elicit the strongest N2 response 
-# and that overall, Cycle 2 has less pronounced N2 amplitudes than Cycle 1
-```
+Now here I create _change_ scores by trial type, so how much did N2 change from T1 to T2, depending on calorie content and Go vs No-Go.
 
 ```{r}
 # Let's create change scores by trial type:
@@ -1101,14 +1041,9 @@ N2_change_df <- full_withERP %>%
   separate(col = trialtype, into = c("HighLow", "GoNo"), sep = -2) %>%
   mutate(., HighLow = sapply(strsplit(HighLow, split = "_", fixed = TRUE), function(x) (x[2])))
 
-
-fit_change_by_trialtype <- lmerTest::lmer(N2_change ~ HighLow*GoNo + (1|pp),
-                                      data=N2_change_df)
-anova_change_by_trialtype <- anova(fit_change_by_trialtype)
-anova_change_by_trialtype 
+aov_car(N2_change ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
+        data=N2_change_df)
 # This shows that the CHANGE in N2 does not differ between trial types, i.e. it's the same for Go/No-Go trials and High/Low calorie stimuli
-# Obviously, the standard deviation is really large - there's a lot of variation in the N2 amplitudes
-summary(fit_change_by_trialtype)
 
 plot_N2_change_df <- 
   N2_change_df %>% 
@@ -1117,12 +1052,27 @@ plot_N2_change_df <-
 
 ggplot(plot_N2_change_df, aes(x = GoNo, y = mean_change, colour = HighLow)) +
   geom_point() + 
-  geom_errorbar(aes(ymin = mean_change-2*(sd/49), ymax = mean_change+2*(sd/49)), inherit = TRUE, width = 0.1)
+  geom_errorbar(aes(ymin = mean_change-2*(sd/nrow(ERP_tidy)), ymax = mean_change+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1)
+# Obviously, the standard deviation is really large - there's a lot of variation in the N2 amplitudes
+# But also, N2 on No-Go trials really hardly changes at all.
 ```
 
 Let's ignore the training effects for a moment and focus on _overall_ N2s in the bias blocks.
 
 ```{r}
+ERP_plot_by_trialtype <- full_withERP %>%
+  select(pp,
+         HighGo_1_HighCalGo.allsites,
+         HighGo_2_HighCalGo.allsites,
+         LowNo_1_HighCalGo.allsites,
+         LowNo_2_HighCalGo.allsites,
+         HighNo_1_LowCalGo.allsites,
+         HighNo_2_LowCalGo.allsites, 
+         LowGo_1_LowCalGo.allsites, 
+         LowGo_2_LowCalGo.allsites)%>%
+  gather("Trial.Cycle.Block", "N2", HighGo_1_HighCalGo.allsites:LowGo_2_LowCalGo.allsites) %>%
+  separate(col = Trial.Cycle.Block, into = c("Trial", "Cycle", "Block"), sep = "_")
+
 ERP_plot_2by2Trial <- ERP_plot_by_trialtype %>%
   separate(col = Trial, into = c("HighLow", "GoNo"), sep = -2)
 
@@ -1130,13 +1080,10 @@ ERP_plot_by_trialtype_summary <- ERP_plot_2by2Trial %>% group_by(HighLow, GoNo) 
 
 ggplot(ERP_plot_by_trialtype_summary, aes(x = HighLow, mean, color = GoNo, group = GoNo)) +
   geom_point() + 
-  geom_errorbar(aes(ymin = mean-2*(sd/49), ymax = mean+2*(sd/49)), inherit = TRUE, width = 0.1) +
-  ylim(-4, -1)
+  geom_errorbar(aes(ymin = mean-2*(sd/49), ymax = mean+2*(sd/49)), inherit = TRUE, width = 0.1)
 
-fit_trainingblocks_by_trialtype <- lmerTest::lmer(N2 ~ HighLow*GoNo + (1|pp),
-                                      data=ERP_plot_2by2Trial)
-anova_trainingblocks_by_trialtype <- anova(fit_trainingblocks_by_trialtype)
-anova_trainingblocks_by_trialtype 
+aov_car(N2 ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
+                                  data = ERP_plot_2by2Trial)
 ```
 
 And now let's include Cycle again as a variable to take another closer look.
@@ -1147,22 +1094,23 @@ ERP_plot_by_trialtype_by_Cycle_summary <- ERP_plot_2by2Trial %>% group_by(HighLo
 ggplot(ERP_plot_by_trialtype_by_Cycle_summary, aes(x = Cycle, mean, color = GoNo, group = GoNo)) +
   geom_point() + 
   geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean-2*(sd/49), ymax = mean+2*(sd/49)), inherit = TRUE, width = 0.1) +
+  geom_errorbar(aes(ymin = mean-2*(sd/nrow(ERP_tidy)), ymax = mean+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1) +
   facet_wrap(aes(Facets = HighLow))
 
-anova(lmerTest::lmer(N2 ~ HighLow*GoNo*Cycle + (1|pp), data = ERP_plot_2by2Trial))
+aov_car(N2 ~ HighLow*GoNo*Cycle + Error(pp/HighLow*GoNo*Cycle), 
+        data = ERP_plot_2by2Trial)
 ```
 
-This is looking at Go vs NoGo, High vs Low, and Cycle instead of difference scores (which, of course, leads to nasty three-way interaction terms). Again, there's significant main effects of GoNo and Cycle but no interactions.
-All this indicates that N2 becomes less pronounced with training _regardless of trial type_.
+This is looking at Go vs NoGo, High vs Low, and Cycle instead of difference scores (which, of course, leads to nasty three-way interaction terms). Again, there's significant main effects of GoNo but nothing else.
+All this indicates that N2 is just less on Go than on NoGo trials (which is pretty trivial). On the bright side, there are no three-way interactions to interpret...
 
 Let's check out the time course in the Balanced block to see if there is a training effect there already.
 
 ```{r}
 Balanced_Cycles <- full_withERP %>%
   select(pp,
-         HighGo_1_Balanced.allsites:LowNo_2_LowCalGo.allsites) %>%
-  gather("Trial_Cycle_Block", "N2", HighGo_1_Balanced.allsites:LowNo_2_LowCalGo.allsites) %>%
+         HighGo_1_Balanced.allsites:LowNo_2_Balanced.allsites) %>%
+  gather("Trial_Cycle_Block", "N2", HighGo_1_Balanced.allsites:LowNo_2_Balanced.allsites) %>%
   separate(col = Trial_Cycle_Block, into = c("Trial", "Cycle", "Block"), sep = "_") %>%
   separate(col = "Trial", into = c("HighLow", "GoNo"), sep = -2) %>%
   group_by(HighLow, GoNo, Cycle)
@@ -1173,13 +1121,47 @@ Balanced_Cycles_summary <- Balanced_Cycles %>%
 ggplot(Balanced_Cycles_summary, aes(x = Cycle, y = mean_N2, color = GoNo, group = GoNo)) +
   geom_point() + 
   geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean_N2-2*(sd/49), ymax = mean_N2+2*(sd/49)), inherit = TRUE, width = 0.1) +
-  facet_wrap(aes(Facets = HighLow))  
+  geom_errorbar(aes(ymin = mean_N2-2*(sd/nrow(ERP_tidy)), ymax = mean_N2+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1) +
+  facet_wrap(aes(Facets = HighLow)) +
+  ggtitle("Mean N2 by Cycle, calorie content, and Go vs No in the Balanced Block") +
+  ylim(-6, -2.5)
 
-anova(lmerTest::lmer(N2 ~ HighLow*GoNo*Cycle + (1|pp), data = Balanced_Cycles))
+aov_car(N2 ~ HighLow*GoNo*Cycle + Error(pp/HighLow*GoNo*Cycle),
+        data = Balanced_Cycles)
 ```
 
-So the effects in the Balanced block are pretty much the same as in the Bias blocks: Main effects of Go vs No and of Cycle with no interactions. This seems to indicate that the training blocks don't do anything that the Balanced block doesn't also do...
+And then for the biased blocks.
+
+```{r}
+Bias_Cycles <- full_withERP %>%
+  select(pp,
+         HighGo_1_HighCalGo.allsites, HighGo_2_HighCalGo.allsites,
+         HighNo_1_LowCalGo.allsites, HighNo_2_LowCalGo.allsites,
+         LowGo_1_LowCalGo.allsites, LowGo_2_LowCalGo.allsites,
+         LowNo_1_HighCalGo.allsites, LowNo_2_HighCalGo.allsites) %>%
+  gather("Trial_Cycle_Block", "N2", HighGo_1_HighCalGo.allsites:LowNo_2_HighCalGo.allsites) %>%
+  separate(col = Trial_Cycle_Block, into = c("Trial", "Cycle", "Block"), sep = "_") %>%
+  separate(col = "Trial", into = c("HighLow", "GoNo"), sep = -2) %>%
+  group_by(HighLow, GoNo, Cycle)
+
+Bias_Cycles_summary <- Bias_Cycles %>%
+  summarise_at(., "N2", funs("mean_N2" = mean, sd))
+
+ggplot(Bias_Cycles_summary, aes(x = Cycle, y = mean_N2, color = GoNo, group = GoNo)) +
+  geom_point() + 
+  geom_line(stat = "identity") +
+  geom_errorbar(aes(ymin = mean_N2-2*(sd/nrow(ERP_tidy)), ymax = mean_N2+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1) +
+  facet_wrap(aes(Facets = HighLow)) +
+  ggtitle("Mean N2 by Cycle, calorie content, and Go vs No in the Biased Blocks") +
+  ylim(-6, -2.5)
+
+aov_car(N2 ~ HighLow*GoNo*Cycle + Error(pp/HighLow*GoNo*Cycle),
+        data = Bias_Cycles)
+```
+
+So the effects in the Balanced block are pretty much the same as in the Bias blocks: Main effect of Go vs No but no more. This seems to indicate that the training blocks don't do anything that the Balanced block doesn't also do...
+
+(NB: results do not change considerably when removing participants with no/reversed GNG effect)
 
 # Correlation tables
 Let's plot correlations between some variables of interest:
