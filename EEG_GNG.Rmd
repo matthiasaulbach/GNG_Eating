@@ -1094,8 +1094,9 @@ ERP_plot_by_trialtype_by_Cycle_summary <- ERP_plot_2by2Trial %>% group_by(HighLo
 ggplot(ERP_plot_by_trialtype_by_Cycle_summary, aes(x = Cycle, mean, color = GoNo, group = GoNo)) +
   geom_point() + 
   geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean-2*(sd/nrow(ERP_tidy)), ymax = mean+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1) +
-  facet_wrap(aes(Facets = HighLow))
+  geom_errorbar(aes(ymin = mean-2*(sd/nrow(ERP_tidy)), ymax = mean+2*(sd/nrow(ERP_tidy))), width = 0.1) +
+  facet_wrap(aes(Facets = HighLow)) +
+  ggtitle("Mean Ns for dominant trials in the Bias blocks")
 
 aov_car(N2 ~ HighLow*GoNo*Cycle + Error(pp/HighLow*GoNo*Cycle), 
         data = ERP_plot_2by2Trial)
@@ -1162,6 +1163,96 @@ aov_car(N2 ~ HighLow*GoNo*Cycle + Error(pp/HighLow*GoNo*Cycle),
 So the effects in the Balanced block are pretty much the same as in the Bias blocks: Main effect of Go vs No but no more. This seems to indicate that the training blocks don't do anything that the Balanced block doesn't also do...
 
 (NB: results do not change considerably when removing participants with no/reversed GNG effect)
+
+## With retaining "Electrode"
+
+We can of course use electrode as a factor as well.
+
+### For bias blocks
+
+```{r}
+Bias_Cycles_electrodes <- full_withERP %>%
+  select(pp,
+         High_Go.1.HighCalGo.Cz, High_Go.2.HighCalGo.Cz,
+         High_No.1.LowCalGo.Cz, High_No.2.LowCalGo.Cz,
+         Low_Go.1.LowCalGo.Cz, Low_Go.2.LowCalGo.Cz,
+         Low_No.1.HighCalGo.Cz, Low_No.2.HighCalGo.Cz,
+         High_Go.1.HighCalGo.FC1, High_Go.2.HighCalGo.FC1,
+         High_No.1.LowCalGo.FC1, High_No.2.LowCalGo.FC1,
+         Low_Go.1.LowCalGo.FC1, Low_Go.2.LowCalGo.FC1,
+         Low_No.1.HighCalGo.FC1, Low_No.2.HighCalGo.FC1,
+         High_Go.1.HighCalGo.FC2, High_Go.2.HighCalGo.FC2,
+         High_No.1.LowCalGo.FC2, High_No.2.LowCalGo.FC2,
+         Low_Go.1.LowCalGo.FC2, Low_Go.2.LowCalGo.FC2,
+         Low_No.1.HighCalGo.FC2, Low_No.2.HighCalGo.FC2,
+         High_Go.1.HighCalGo.Fz, High_Go.2.HighCalGo.Fz,
+         High_No.1.LowCalGo.Fz, High_No.2.LowCalGo.Fz,
+         Low_Go.1.LowCalGo.Fz, Low_Go.2.LowCalGo.Fz,
+         Low_No.1.HighCalGo.Fz, Low_No.2.HighCalGo.Fz) %>%
+  gather("Trial_Cycle_Block_Electrode", "N2", High_Go.1.HighCalGo.Cz:Low_No.2.HighCalGo.Fz) %>%
+  separate(col = "Trial_Cycle_Block_Electrode", into = c("HighLow", "GoNo", "Cycle", "Block", "Electrode"), sep = "([\\.\\_])")
+  
+
+Bias_Cycles_electrodes_summary <- Bias_Cycles_electrodes %>% 
+  group_by(HighLow, GoNo, Cycle, Electrode) %>% 
+  summarise_at(., "N2", funs("mean_N2" = mean, sd))
+
+ggplot(Bias_Cycles_electrodes_summary, aes(x = Cycle, y = mean_N2, color = GoNo, group = interaction(GoNo,HighLow), shape = HighLow)) +
+  geom_point(size = 3) + 
+  geom_line(stat = "identity") +
+  geom_errorbar(aes(ymin = mean_N2-2*(sd/nrow(ERP_tidy)), ymax = mean_N2+2*(sd/nrow(ERP_tidy))), width = 0.1) +
+  facet_wrap(aes(Facets = Electrode)) +
+  ggtitle("Mean N2 by Cycle, calorie content, electrode, and Go vs No in the Biased Blocks")
+
+aov_car(N2 ~ HighLow*GoNo*Cycle*Electrode + Error(pp/HighLow*GoNo*Cycle*Electrode),
+        data = Bias_Cycles_electrodes)
+```
+
+So this gives us (1) a main effect of Go-NoGo, (2) a main effect of Electrode and (3) an interaction between Go-NoGo and Electrode site, indicating that the Go-NoGo effect is more pronouned in some electrodes than others. No higher order interactions are significant, so there doesn't seem to be e.g. an effect of food on Go-NoGo effects in some electrodes. (Roughly judging from the graphs, Go-NoGo effects seem mpst pronounced in Cz)
+
+### For the balanced block
+
+```{r}
+Balanced_Cycles_electrodes <- full_withERP %>%
+  select(pp,
+         High_Go.1.Balanced.Cz, High_Go.2.Balanced.Cz,
+         High_No.1.Balanced.Cz, High_No.2.Balanced.Cz,
+         Low_Go.1.Balanced.Cz, Low_Go.2.Balanced.Cz,
+         Low_No.1.Balanced.Cz, Low_No.2.Balanced.Cz,
+         High_Go.1.Balanced.FC1, High_Go.2.Balanced.FC1,
+         High_No.1.Balanced.FC1, High_No.2.Balanced.FC1,
+         Low_Go.1.Balanced.FC1, Low_Go.2.Balanced.FC1,
+         Low_No.1.Balanced.FC1, Low_No.2.Balanced.FC1,
+         High_Go.1.Balanced.FC2, High_Go.2.Balanced.FC2,
+         High_No.1.Balanced.FC2, High_No.2.Balanced.FC2,
+         Low_Go.1.Balanced.FC2, Low_Go.2.Balanced.FC2,
+         Low_No.1.Balanced.FC2, Low_No.2.Balanced.FC2,
+         High_Go.1.Balanced.Fz, High_Go.2.Balanced.Fz,
+         High_No.1.Balanced.Fz, High_No.2.Balanced.Fz,
+         Low_Go.1.Balanced.Fz, Low_Go.2.Balanced.Fz,
+         Low_No.1.Balanced.Fz, Low_No.2.Balanced.Fz) %>%
+  gather("Trial_Cycle_Block_Electrode", "N2", High_Go.1.Balanced.Cz:Low_No.2.Balanced.Fz) %>%
+  separate(col = "Trial_Cycle_Block_Electrode", into = c("HighLow", "GoNo", "Cycle", "Block", "Electrode"), sep = "([\\.\\_])")
+  
+
+Balanced_Cycles_electrodes_summary <- Balanced_Cycles_electrodes %>% 
+  group_by(HighLow, GoNo, Cycle, Electrode) %>% 
+  summarise_at(., "N2", funs("mean_N2" = mean, sd))
+
+ggplot(Balanced_Cycles_electrodes_summary, aes(x = Cycle, y = mean_N2, color = GoNo, group = interaction(GoNo,HighLow), shape = HighLow)) +
+  geom_point(size = 3) + 
+  geom_line(stat = "identity") +
+  geom_errorbar(aes(ymin = mean_N2-2*(sd/nrow(ERP_tidy)), ymax = mean_N2+2*(sd/nrow(ERP_tidy))), width = 0.1) +
+  facet_wrap(aes(Facets = Electrode)) +
+  ggtitle("Mean N2 by Cycle, calorie content, electrode, and Go vs No in the Biased Blocks")
+
+aov_car(N2 ~ HighLow*GoNo*Cycle*Electrode + Error(pp/HighLow*GoNo*Cycle*Electrode),
+        data = Balanced_Cycles_electrodes)
+```
+
+Good luck interpreting these results...
+From a first glance it seems like Cz might contain some interesting trends: Possibly a main effect of Cycle there. 
+Problem: Only the one-way interactions between between Electrode and HighLow, GoNo, and Cycle are significant but no higher order interactions. (side note: when running an ANOVA with Cz data only, we don't get anything special out of it either, just a Go-NoGo effect and main effect of Cycle at p=.06)
 
 # Correlation tables
 Let's plot correlations between some variables of interest:
