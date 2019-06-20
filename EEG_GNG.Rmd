@@ -1,5 +1,5 @@
 ---
-title: "EEG GNG"
+title: "Analysis for _N2 in Food-Go/No-Go training_"
 output:
   html_document:
     code_folding: hide
@@ -14,15 +14,16 @@ output:
 
 ```{r setup, include=FALSE, error=FALSE, warning=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE, error=FALSE, warning=FALSE)
-pacman::p_load(tidyverse, rprime, wrapr, ggplot2, xlsx, here, lmerTest, afex)
+pacman::p_load(tidyverse, rprime, wrapr, ggplot2, xlsx, emmeans, lmerTest, afex, apa, stargazer, apaTables, sjPlot, lsr)
 options(scipen=999)
 test_dats_raw <- readRDS("E-Prime data/raw_RT_data.rds")
 ```
 
+In this document, I supply some information about the data distribution that is not in the manuscript, the most important data wrangling code, the analyses underlying the content of the paper, and some additional analyses that go beyond what was reported there. All of the code can of course be adjusted to conduct additional analyses of interest.
 
-```{r outlier removal, echo=FALSE}
+```{r outlier removal RT, echo=FALSE}
 test_dats_trim <- test_dats_raw %>% 
-  select(-c(2:15), -BMI) %>%
+  dplyr::select(-c(2:15), -BMI) %>%
   subset(!is.na(Stim.RT))
 test_dats_trim$Subject <- as.numeric(test_dats_trim$Subject)
 test_dats_trim$Running <- as.factor(test_dats_trim$Running)
@@ -46,21 +47,22 @@ test_dats <- trimr::sdTrim(data = subset(test_dats_trim,
                                        Running == "TrialListLowCalGo")), condVar = "Running", pptVar = "Subject", rtVar = "Stim.RT",
                               perCondition = TRUE, perParticipant = TRUE,
                                minRT = 150, sd = 3, returnType = "raw", digits = 0)
-
+test_dats$Prime <- test_dats$Prime %>%
+  gsub(pattern = "img/FOOD/0", replacement = "") %>%
+  as.factor
 ## Note that "test_dats" now holds GO trials only!
 ```
 
-
-```{r, echo=FALSE}
+```{r data wrangling, echo=FALSE}
 ## RT grouped by Subject, Primetype, Block (Assessment, HighCalGo, LowCalGo), and Cycle
-RT_by_subject <- subset(test_dats, (Primetype == "HighGo" | Primetype == "LowGo")) %>% 
+RT_by_subject <- subset(test_dats, (Primetype == "HighGo" | Primetype == "LowGo" | Primetype == "DistGo")) %>% 
   filter(!is.na(Stim.RT)) %>% 
   filter(Running != "TrialListTrain") %>%
   group_by(Subject, Primetype, Running, Cycle) %>%
   dplyr::summarize(meanRT = mean(Stim.RT, na.rm = TRUE), sdRT = sd(Stim.RT, na.rm = TRUE))
 ## Let's make RT_by_subject tidy
 RT_tidy <- RT_by_subject %>%
-  select(-sdRT) %>%
+  dplyr::select(-sdRT) %>%
   unite(Prime_Running, Primetype, Running) %>%
   unite(Prime_Running_Cycle, Prime_Running, Cycle) %>%
   spread(key = Prime_Running_Cycle, value = meanRT)
@@ -71,52 +73,28 @@ RT_tidy$Handedness <- subset(test_dats_raw$Handedness, !is.na(test_dats_raw$Hand
 RT_tidy$Height <- subset(test_dats_raw$Height, !is.na(test_dats_raw$Height))
 RT_tidy$Weight <- subset(test_dats_raw$Weight, !is.na(test_dats_raw$Weight))
 RT_tidy$BMI <- subset(test_dats_raw$BMI, !is.na(test_dats_raw$BMI))
-```
 
-```{r, echo=FALSE}
-# Out of curiosity, we can check the evaluations of different food items
-food_evals <- test_dats_raw %>% 
-  filter(!is.na(FoodEvalItems.RESP)) %>%
-  group_by(FoodPic) %>%
-  summarize(mean = mean(FoodEvalItems.RESP), sd = sd(FoodEvalItems.RESP))
-```
-
-```{r data wrangling, echo=FALSE}
 ###### Read in all the other data
 food_hunger_lasteaten <- readRDS("./diaries/food_hunger_lasteaten.rds")
 ###### And the ERP data:
 ERP_tidy <- readRDS("ERP_tidy_individual_averages.rds")
 
-# Creating the baseline difference scores
-## since there are two values for each electrode and trial type (the two cycles), I average across those
-ERP_tidy <- ERP_tidy %>%
-  mutate(BaselineDiff_Cz = 
-           (((High_No.1.Balanced.Cz + High_No.2.Balanced.Cz)/2) - ((High_Go.1.Balanced.Cz + High_Go.2.Balanced.Cz)/2)) -
-           (((Low_No.1.Balanced.Cz + Low_No.2.Balanced.Cz)/2) - ((Low_Go.1.Balanced.Cz + Low_Go.2.Balanced.Cz)/2)),
-         BaselineDiff_FC1 = 
-           (((High_No.1.Balanced.FC1 + High_No.2.Balanced.FC1)/2) - ((High_Go.1.Balanced.FC1 + High_Go.2.Balanced.FC1)/2)) -
-           (((Low_No.1.Balanced.FC1 + Low_No.2.Balanced.FC1)/2) - ((Low_Go.1.Balanced.FC1 + Low_Go.2.Balanced.FC1)/2)),
-         BaselineDiff_FC2 = 
-           (((High_No.1.Balanced.FC2 + High_No.2.Balanced.FC2)/2) - ((High_Go.1.Balanced.FC2 + High_Go.2.Balanced.FC2)/2)) -
-           (((Low_No.1.Balanced.FC2 + Low_No.2.Balanced.FC2)/2) - ((Low_Go.1.Balanced.FC2 + Low_Go.2.Balanced.FC2)/2)),
-         BaselineDiff_Fz = 
-           (((High_No.1.Balanced.Fz + High_No.2.Balanced.Fz)/2) - ((High_Go.1.Balanced.Fz + High_Go.2.Balanced.Fz)/2)) -
-           (((Low_No.1.Balanced.Fz + Low_No.2.Balanced.Fz)/2) - ((Low_Go.1.Balanced.Fz + Low_Go.2.Balanced.Fz)/2)),
-         BaselineDiff_allsites = 
-           ((HighNo.Balanced.allsites - HighGo.Balanced.allsites) - (LowNo.Balanced.allsites - LowGo.Balanced.allsites))
-  )
-```
-
-```{r}
-# The final tidy data frame!
+# Putting the data frames together
 diaries_weekdays <- read.table("./diaries/diaries_weekdays.txt", header = TRUE, sep = "\t")
 full_dat <- full_join(food_hunger_lasteaten, RT_tidy, by = "Subject")
+# We have to exclude participant number 12 as that EEG data is not usable
+full_dat <- subset(full_dat, Subject != 12)
 ERP_tidy$Subject <- as.numeric(ERP_tidy$pp)
+
+
+# The final tidy data frame: full_withERP!
 full_withERP <- full_join(full_dat, ERP_tidy, by = "Subject")
+
+
 # adding the "Order" variable
 ## need to make "Subject" numeric
 full_withERP$Subject <- as.numeric(full_withERP$Subject)
-full_withERP$Order <- ifelse((full_withERP$Subject %% 2) == 0, "LowHigh", "HighLow")
+full_withERP$Order <- ifelse((full_withERP$Subject %% 2) == 0, "LowCalGofirst", "HighCalGofirst")
 full_withERP$Subject <- as.factor(full_withERP$Subject)
 # Also adding a variable indicating total in-lab food intake
 full_withERP$total_in_lab <- full_withERP$consumed_T1 + full_withERP$consumed_T2
@@ -146,23 +124,35 @@ full_withERP <- plyr::rename(full_withERP, c("HighGo_TrialListHighCalGo_1"="High
                          "LowGo_TrialListTestBalanced_1"="Low_Balanced_1",
                          "LowGo_TrialListTestBalanced_2"="Low_Balanced_2",
                          "LowGo_TrialListTestBalanced_3"="Low_Balanced_3",
-                         "LowGo_TrialListTestBalanced_4"="Low_Balanced_4"))
+                         "LowGo_TrialListTestBalanced_4"="Low_Balanced_4",
+                         "DistGo_TrialListHighCalGo_1"="Dist_HighGo_1", 
+                         "DistGo_TrialListHighCalGo_2"="Dist_HighGo_2",
+                         "DistGo_TrialListHighCalGo_3"="Dist_HighGo_3",
+                         "DistGo_TrialListHighCalGo_4"="Dist_HighGo_4",
+                         "DistGo_TrialListLowCalGo_1"="Dist_LowGo_1",
+                         "DistGo_TrialListLowCalGo_2"="Dist_LowGo_2",
+                         "DistGo_TrialListLowCalGo_3"="Dist_LowGo_3",
+                         "DistGo_TrialListLowCalGo_4"="Dist_LowGo_4",
+                         "DistGo_TrialListTestBalanced_1"="Dist_Balanced_1",
+                         "DistGo_TrialListTestBalanced_2"="Dist_Balanced_2",
+                         "DistGo_TrialListTestBalanced_3"="Dist_Balanced_3",
+                         "DistGo_TrialListTestBalanced_4"="Dist_Balanced_4"))
 
-# Creating baseline bias variable
+# Creating baseline RT bias variable
 full_withERP$baseline_high_go <- (full_withERP$High_Balanced_1 + full_withERP$High_Balanced_2 +
                                 full_withERP$High_Balanced_3 + full_withERP$High_Balanced_4)/4
 full_withERP$baseline_low_go <- (full_withERP$Low_Balanced_1 + full_withERP$Low_Balanced_2 +
                                 full_withERP$Low_Balanced_3 + full_withERP$Low_Balanced_4)/4
 full_withERP$baseline_RTbias <- full_withERP$baseline_high_go - full_withERP$baseline_low_go
 
-# Calculating the training block bias
+# Calculating the RT training block bias
 full_withERP$high_bias_high_go <- (full_withERP$High_HighGo_1 + full_withERP$High_HighGo_2 +
                                 full_withERP$High_HighGo_3 + full_withERP$High_HighGo_4)/4
 full_withERP$low_bias_low_go <- (full_withERP$Low_LowGo_1 + full_withERP$Low_LowGo_2 +
                                 full_withERP$Low_LowGo_3 + full_withERP$Low_LowGo_4)/4
 full_withERP$training_RTbias <- full_withERP$high_bias_high_go - full_withERP$low_bias_low_go
 
-# Difference between time points
+# Difference between time points in food intake
 full_withERP$lab_food_diff <- full_withERP$after_High_Cal_Go - full_withERP$after_Low_Cal_Go
 
 # Creating a mean score for hunger etc.
@@ -170,17 +160,29 @@ full_withERP$lab_food_diff <- full_withERP$after_High_Cal_Go - full_withERP$afte
 full_withERP$full_inv <- car::recode(full_withERP$Full.RESP, '1=7; 2=6; 3=5; 4=4; 5=3; 6=2; 7=1')
 ## taking the mean of all thos variables
 full_withERP$overall_hunger <- rowMeans(full_withERP[c("full_inv", "Hungry.RESP" ,"Desire.RESP", "Urge.RESP", "Preoccupation.RESP")], na.rm = TRUE)
-```
 
-# Defining outliers
-I'll just leave the code here to see so we know how outliers were defined.
+# Creating the baseline difference scores for ERP
+## since there are two values for each electrode and trial type (the two cycles), I average across those
+full_withERP <- full_withERP %>%
+  mutate(BaselineDiff_Cz = 
+           (((High_No.1.Balanced.Cz + High_No.2.Balanced.Cz)/2) - ((High_Go.1.Balanced.Cz + High_Go.2.Balanced.Cz)/2)) -
+           (((Low_No.1.Balanced.Cz + Low_No.2.Balanced.Cz)/2) - ((Low_Go.1.Balanced.Cz + Low_Go.2.Balanced.Cz)/2)),
+         BaselineDiff_FC1 = 
+           (((High_No.1.Balanced.FC1 + High_No.2.Balanced.FC1)/2) - ((High_Go.1.Balanced.FC1 + High_Go.2.Balanced.FC1)/2)) -
+           (((Low_No.1.Balanced.FC1 + Low_No.2.Balanced.FC1)/2) - ((Low_Go.1.Balanced.FC1 + Low_Go.2.Balanced.FC1)/2)),
+         BaselineDiff_FC2 = 
+           (((High_No.1.Balanced.FC2 + High_No.2.Balanced.FC2)/2) - ((High_Go.1.Balanced.FC2 + High_Go.2.Balanced.FC2)/2)) -
+           (((Low_No.1.Balanced.FC2 + Low_No.2.Balanced.FC2)/2) - ((Low_Go.1.Balanced.FC2 + Low_Go.2.Balanced.FC2)/2)),
+         BaselineDiff_Fz = 
+           (((High_No.1.Balanced.Fz + High_No.2.Balanced.Fz)/2) - ((High_Go.1.Balanced.Fz + High_Go.2.Balanced.Fz)/2)) -
+           (((Low_No.1.Balanced.Fz + Low_No.2.Balanced.Fz)/2) - ((Low_Go.1.Balanced.Fz + Low_Go.2.Balanced.Fz)/2)),
+         BaselineDiff_allsites = 
+           ((HighNo.Balanced.allsites - HighGo.Balanced.allsites) - (LowNo.Balanced.allsites - LowGo.Balanced.allsites))
+  )
 
-```{r outlier participants}
-# We have to exclude participant number 12 as that EEG data is not usable
-full_withERP <- subset(full_withERP, Subject != 12)
-## I can't use the tidy dataframe for detecting outliers. I  need the data to be organised in a different way
-ERP_long <- ERP_tidy %>%
-  select(., - c("BaselineDiff_Cz":"Subject")) %>%
+# And let's make the data frame long for future use
+ERP_long <- full_withERP %>%
+  dplyr::select(., - c("Subject":"Daily_intake")) %>%
   mutate(High_No_Balanced_Cz = ((High_No.1.Balanced.Cz + High_No.2.Balanced.Cz)/2),
          High_Go_Balanced_Cz = ((High_Go.1.Balanced.Cz + High_Go.2.Balanced.Cz)/2),
          Low_No_Balanced_Cz = ((Low_No.1.Balanced.Cz + Low_No.2.Balanced.Cz)/2),
@@ -229,294 +231,302 @@ ERP_long <- ERP_tidy %>%
          High_Go_LowCalGo_Fz = ((High_Go.1.LowCalGo.Fz + High_Go.2.LowCalGo.Fz)/2),
          Low_No_LowCalGo_Fz = ((Low_No.1.LowCalGo.Fz + Low_No.2.LowCalGo.Fz)/2),
          Low_Go_LowCalGo_Fz = ((Low_Go.1.LowCalGo.Fz + Low_Go.2.LowCalGo.Fz)/2)) %>%
-  select(-c(High_Go.1.Balanced.Cz:Low_No.2.LowCalGo.Fz)) %>%
+  dplyr::select(-c(High_Go.1.Balanced.Cz:Low_No.2.LowCalGo.Fz)) %>%
   gather("Variable", "Value", High_No_Balanced_Cz:Low_Go_LowCalGo_Fz) %>%
   separate(Variable, c("HighLow", "GoNo", "Block", "Electrode"))
-    
-ERP_outlier_det <- ERP_long %>%
-  group_by(pp, Block, Electrode) %>%
-  summarise_at(vars("Value"), funs(mean)) %>%
-  unite(Block_Elec, Block, Electrode, sep = ".") %>%
-  spread(key = Block_Elec, value = Value)
 
-full_withERP$ERP_outlier <- ifelse(
-      ERP_outlier_det$Balanced.Cz > (mean(ERP_outlier_det$Balanced.Cz) + 3*sd(ERP_outlier_det$Balanced.Cz)) |
-      ERP_outlier_det$Balanced.FC1 > (mean(ERP_outlier_det$Balanced.FC1) + 3*sd(ERP_outlier_det$Balanced.FC1)) |
-      ERP_outlier_det$Balanced.FC2 > (mean(ERP_outlier_det$Balanced.FC2) + 3*sd(ERP_outlier_det$Balanced.FC2)) |
-      ERP_outlier_det$Balanced.Fz > (mean(ERP_outlier_det$Balanced.Fz) + 3*sd(ERP_outlier_det$Balanced.Fz)) |
-      ERP_outlier_det$HighCalGo.Cz > (mean(ERP_outlier_det$HighCalGo.Cz) + 3*sd(ERP_outlier_det$HighCalGo.Cz)) |
-      ERP_outlier_det$HighCalGo.FC1 > (mean(ERP_outlier_det$HighCalGo.FC1) + 3*sd(ERP_outlier_det$HighCalGo.FC1)) |
-      ERP_outlier_det$HighCalGo.FC2 > (mean(ERP_outlier_det$HighCalGo.FC2) + 3*sd(ERP_outlier_det$HighCalGo.FC2)) |
-      ERP_outlier_det$HighCalGo.Fz > (mean(ERP_outlier_det$HighCalGo.Fz) + 3*sd(ERP_outlier_det$HighCalGo.Fz)) |
-      ERP_outlier_det$LowCalGo.Cz > (mean(ERP_outlier_det$LowCalGo.Cz) + 3*sd(ERP_outlier_det$LowCalGo.Cz)) |
-      ERP_outlier_det$LowCalGo.FC1 > (mean(ERP_outlier_det$LowCalGo.FC1) + 3*sd(ERP_outlier_det$LowCalGo.FC1)) |
-      ERP_outlier_det$LowCalGo.FC2 > (mean(ERP_outlier_det$LowCalGo.FC2) + 3*sd(ERP_outlier_det$LowCalGo.FC2)) |
-      ERP_outlier_det$LowCalGo.Fz > (mean(ERP_outlier_det$LowCalGo.Fz) + 3*sd(ERP_outlier_det$LowCalGo.Fz))
-      , 1, 0)
-
-
+# Checking outliers in the food diary intake
 # Outlier participants (defined as 3 sd above or below average)
 ## Food diary intake
 full_withERP$Daily_intake_outlier <- 
   ifelse(full_withERP$Daily_intake > (mean(full_withERP$Daily_intake, na.rm = TRUE) + 3*sd(full_withERP$Daily_intake, na.rm = TRUE)) |
            full_withERP$Daily_intake < (mean(full_withERP$Daily_intake, na.rm = TRUE) - 3*sd(full_withERP$Daily_intake, na.rm = TRUE)),
          1, 0)
-## Total lab intake
-full_withERP$total_in_lab_outlier <- 
-  ifelse(full_withERP$total_in_lab > (mean(full_withERP$total_in_lab) + 3*sd(full_withERP$total_in_lab)) |
-           full_withERP$total_in_lab < (mean(full_withERP$total_in_lab) - 3*sd(full_withERP$total_in_lab)),
-         1, 0)
-## Lab intake difference between timepoints
-full_withERP$lab_food_diff_outlier <- 
-  ifelse(full_withERP$lab_food_diff > (mean(full_withERP$lab_food_diff) + 3*sd(full_withERP$lab_food_diff)) |
-           full_withERP$lab_food_diff < (mean(full_withERP$lab_food_diff) - 3*sd(full_withERP$lab_food_diff)),
-         1, 0)
-## Baseline bias
-full_withERP$baseline_RTbias_outlier <- 
-  ifelse(full_withERP$baseline_RTbias > (mean(full_withERP$baseline_RTbias) + 3*sd(full_withERP$baseline_RTbias)) |
-           full_withERP$baseline_RTbias < (mean(full_withERP$baseline_RTbias) - 3*sd(full_withERP$baseline_RTbias)),
-         1, 0)
-## Training bias
-full_withERP$training_RTbias_outlier <- 
-  ifelse(full_withERP$training_RTbias > (mean(full_withERP$training_RTbias) + 3*sd(full_withERP$training_RTbias)) |
-           full_withERP$training_RTbias < (mean(full_withERP$training_RTbias) - 3*sd(full_withERP$training_RTbias)),
-         1, 0)
-## By average RTs within the different circles within the blocks
-full_withERP$RT_outlier <- ifelse(
-         full_withERP$High_Balanced_1 > (mean(full_withERP$High_Balanced_1) + 3*sd(full_withERP$High_Balanced_1))|
-         full_withERP$High_Balanced_2 > (mean(full_withERP$High_Balanced_2) + 3*sd(full_withERP$High_Balanced_2))|
-         full_withERP$High_Balanced_3 > (mean(full_withERP$High_Balanced_3) + 3*sd(full_withERP$High_Balanced_3))|
-         full_withERP$High_Balanced_4 > (mean(full_withERP$High_Balanced_4) + 3*sd(full_withERP$High_Balanced_4))|
-         full_withERP$Low_Balanced_1 > (mean(full_withERP$Low_Balanced_1) + 3*sd(full_withERP$Low_Balanced_1))|
-         full_withERP$Low_Balanced_3 > (mean(full_withERP$Low_Balanced_3) + 3*sd(full_withERP$Low_Balanced_3))|
-         full_withERP$Low_Balanced_3 > (mean(full_withERP$Low_Balanced_3) + 3*sd(full_withERP$Low_Balanced_3))|
-         full_withERP$Low_Balanced_4 > (mean(full_withERP$Low_Balanced_4) + 3*sd(full_withERP$Low_Balanced_4))|
-         full_withERP$High_HighGo_1 > (mean(full_withERP$High_HighGo_1) + 3*sd(full_withERP$High_HighGo_1))|
-         full_withERP$High_HighGo_2 > (mean(full_withERP$High_HighGo_2) + 3*sd(full_withERP$High_HighGo_2))|
-         full_withERP$High_HighGo_3 > (mean(full_withERP$High_HighGo_3) + 3*sd(full_withERP$High_HighGo_3))|
-         full_withERP$High_HighGo_4 > (mean(full_withERP$High_HighGo_4) + 3*sd(full_withERP$High_HighGo_4))|
-         full_withERP$Low_HighGo_1 > (mean(full_withERP$Low_HighGo_1) + 3*sd(full_withERP$Low_HighGo_1))|
-         full_withERP$Low_HighGo_2 > (mean(full_withERP$Low_HighGo_2) + 3*sd(full_withERP$Low_HighGo_2))|
-         full_withERP$Low_HighGo_3 > (mean(full_withERP$Low_HighGo_3) + 3*sd(full_withERP$Low_HighGo_3))|
-         full_withERP$Low_HighGo_4 > (mean(full_withERP$Low_HighGo_4) + 3*sd(full_withERP$Low_HighGo_4))|
-         full_withERP$High_LowGo_1 > (mean(full_withERP$High_LowGo_1) + 3*sd(full_withERP$High_LowGo_1))|
-         full_withERP$High_LowGo_2 > (mean(full_withERP$High_LowGo_2) + 3*sd(full_withERP$High_LowGo_2))|
-         full_withERP$High_LowGo_3 > (mean(full_withERP$High_LowGo_3) + 3*sd(full_withERP$High_LowGo_3))|
-         full_withERP$High_LowGo_4 > (mean(full_withERP$High_LowGo_4) + 3*sd(full_withERP$High_LowGo_4))|
-         full_withERP$Low_LowGo_1 > (mean(full_withERP$Low_LowGo_1) + 3*sd(full_withERP$Low_LowGo_1))|
-         full_withERP$Low_LowGo_2 > (mean(full_withERP$Low_LowGo_2) + 3*sd(full_withERP$Low_LowGo_2))|
-         full_withERP$Low_LowGo_3 > (mean(full_withERP$Low_LowGo_3) + 3*sd(full_withERP$Low_LowGo_3))|
-         full_withERP$Low_LowGo_4 > (mean(full_withERP$Low_LowGo_4) + 3*sd(full_withERP$Low_LowGo_4)), 1, 0)
-
-## Outlier on any of these
-full_withERP$outlier <- ifelse(full_withERP$Daily_intake_outlier==1|
-                             full_withERP$total_in_lab_outlier==1|
-                             full_withERP$lab_food_diff_outlier==1|
-                             full_withERP$baseline_RTbias_outlier==1|
-                             full_withERP$training_RTbias_outlier==1|
-                             full_withERP$RT_outlier==1| 
-                             full_withERP$ERP_outlier==1, 1, 0)
-
-## Outlier on any but daily intake (since there are so many to exclude)
-full_withERP$outlier_notdaily <- ifelse(full_withERP$total_in_lab_outlier==1|
-                             full_withERP$lab_food_diff_outlier==1|
-                             full_withERP$baseline_RTbias_outlier==1|
-                             full_withERP$training_RTbias_outlier==1|
-                             full_withERP$RT_outlier==1|
-                             full_withERP$ERP_outlier==1, 1, 0)
-ERP_long$outlier <- full_withERP$outlier
-ERP_long$outlier_notdaily <- full_withERP$outlier_notdaily
 ```
 
-Here is the distribution of N2 amplitudes by block. The error bars indicate mean +/- 3sd so we might consider those points outside those limits as outliers (It's messy with the labels but we only need to identify the ones at the extremes anyway).
+
+# Descriptive statistics
+
+Let's start with some statistics describing our sample:
+
+<style>
+
+table, td, th {
+  border: none;
+  padding-left: 1em;
+  padding-right: 1em;
+  min-width: 50%;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+</style>
+
+```{r descriptives1, results='asis', echo = FALSE}
+as.data.frame(full_withERP) %>%
+  dplyr::select(Age,
+                LastEaten,
+                Daily_intake,
+                Weight,
+                Height,
+                BMI, 
+                Hungry.RESP, 
+                Full.RESP, 
+                Desire.RESP, 
+                HowMuch.RESP, 
+                Urge.RESP, 
+                Preoccupation.RESP, 
+                overall_hunger) %>%
+  stargazer::stargazer(., type = "html", summary.stat = c("mean", "sd", "min", "max"), digits = 2)
+```
+
+And here are the means and standard deviations in the ERP amplitudes for the different trial types in different blocks and parts of the blocks:
+
+```{r descriptives2, results = "asis"}
+full_withERP %>%
+  dplyr::select(HighGo_1_Balanced.allsites:LowNo_2_LowCalGo.allsites) %>%
+  stargazer::stargazer(., type = "html", summary.stat = c("mean", "sd", "min", "max"), digits = 2, title = "Mean ERP values in the different parts of the experiment")
+```
+
+# Hypothesis tests
+
+_Note_: the order of the hypotheses follows the manuscript, not the pre-registration.
+
+## Hypothesis 1: N2 by food image type and Go vs No-Go
+
+So here's the test for the first hypothesis about the interaction between stimulus type and trial type in the balanced block.
 
 ```{r}
-ERP_long_allsites <- ERP_long %>%
-  spread(., Electrode, Value) %>%
-  rowwise %>%
-  mutate(Value = mean(Cz:Fz))
+# Let's test our first hypothesis about the interaction between stimulus type and trial type in the balanced block
+aov_hypothesis1 <- aov_car(Value ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
+        data=subset(ERP_long, Block == "Balanced"), anova_table = list(es = "pes"))
+
+knitr::kable(nice(aov_hypothesis1))
+
+apaTables::apa.2way.table(HighLow, GoNo, Value,
+                          show.marginal.means = TRUE,
+                          subset(ERP_long, Block == "Balanced"))
+
+plot_hypothesis1 <- afex::afex_plot(aov_hypothesis1, 
+                x = "HighLow", 
+                trace = "GoNo",
+                error="within",
+                data_alpha = 0,
+                data_arg = list(size = 1),
+                mapping = c("color"),
+                point_arg = list(size = 3), 
+                error_arg = list(size = 1, width = 0.2),legend_title = "Trial type",
+                factor_levels = (list(GoNo = c("No-Go", "Go")))) +
+                   labs(x = "Calorie content", 
+                        y = "N2",
+                        title = "Baseline N2 amplitudes by calorie content and trial type") + 
+   scale_fill_discrete(name = "Dose") +
+   ylim(-6.5, -2.5) +
+   scale_color_manual(values = c("#D55E00", "#009E73")) +
+   theme_minimal()
   
-ERP_long_summary <- ERP_long_allsites %>% 
-  group_by(HighLow, GoNo, Block) %>% 
-  summarise_at("Value", funs(mean, sd))
-colnames(ERP_long_summary)[colnames(ERP_long_summary) == "mean"] <- "Value"
-
-ggplot(ERP_long_allsites, aes(x = HighLow, y = Value, color = GoNo)) + 
-  geom_point(alpha = .3, position = position_jitter(width = 0.2, height = 0)) +
-  facet_wrap(facets = "Block") + 
-  geom_point(data = ERP_long_summary, stat = "identity", size = 5, alpha = 1) + 
-  geom_errorbar(data = ERP_long_summary, aes(ymin = (Value-3*sd), ymax = (Value+3*sd)), width = 0.3) +
-  geom_text(aes(label = pp))
+plot_hypothesis1
 ```
 
-Looks like no participant is outside the +/- 3 sd range.
+So we have a significant effect of Go/No-Go but, against our hypothesis, no interaction. The difference between Go and No-Go trials is similar for high- and low-calorie foods.
 
-# Graphs
+In addition to the plot in the manuscript, I add here a graph with all the individual mean values.
 
-Just some graphs and stuff to get an idea about the behavioral data.
+```{r hypothesis1ind}
+plot_hypothesis1_ind <- afex::afex_plot(aov_hypothesis1, 
+                x = "HighLow", 
+                trace = "GoNo",
+                error="within",
+                data_alpha = 0.5,
+                data_arg = list(size = 1),
+                mapping = c("color"),
+                point_arg = list(size = 3), 
+                error_arg = list(size = 1, width = 0.2),legend_title = "Trial type",
+                factor_levels = (list(GoNo = c("No-Go", "Go")))) +
+                   labs(x = "Calorie content", 
+                        y = "N2",
+                        title = "Baseline N2 amplitudes by calorie content and trial type") + 
+   scale_fill_discrete(name = "Dose") +
+   scale_color_manual(values = c("#D55E00", "#009E73")) +
+   theme_minimal()
 
-Errors by Subject and session (Baseline vs HighCalGo vs LowCalGo). Blue dots are ommission errors, red dots commission errors.
-
-```{r, echo=FALSE}
-error_plot <- test_dats_raw %>%
-  subset(Running == "TrialListTestBalanced" | Running == "TrialListLowCalGo" | Running == "TrialListHighCalGo") %>%
-  group_by(Subject, Running) %>%
-  summarise_at(c("commission", "ommission"), sum, na.rm = TRUE)
-error_plot_means <- error_plot %>% 
-  group_by(Running) %>% 
-  summarise(commission = mean(commission), ommission = mean(ommission))
-ggplot(data = error_plot, aes(Running, commission)) + 
-  geom_point(color = "red") +
-  geom_jitter(height = .2, color = "red") +
-  geom_point(data = error_plot, aes(Running, ommission), color = "blue") +
-  geom_point(data = error_plot_means, stat = "identity", size = 5, alpha = .6)
+plot_hypothesis1_ind
 ```
 
-Following are the RTs after trimming outliers by block and by part with larger dots indicating the overall means and the smaller ones the subject mean values.
+## Hypothesis 2: Food intake outcomes.
 
-```{r visualize, echo=FALSE}
+Our hypothesis was that participants would eat less candy after performing a _High-Calorie-No-Go_ - task because they have learned to stop to those high-calorie foods. However. we see _higher_ food consumption after the _High-Calorie-No-Go_ condition. Obviously, the t-test shows that there is no significant difference in the predicted direction.
+
+```{r hypothesis2}
+# Let's look at some of the food intake outcomes
+## Lab intake
+full_withERP %>% 
+  select(after_High_Cal_Go, after_Low_Cal_Go) %>%
+  gather(., "Block", "Intake", after_High_Cal_Go:after_Low_Cal_Go) %>%
+  group_by(Block) %>%
+  summarise_at(vars(Intake), funs(mean, sd))
+### Descriptively, participants ate MORE after Low_Cal_Go (against the hypothesis!)
+### Let's run a t-test on that
+t.test(full_withERP$after_High_Cal_Go, full_withERP$after_Low_Cal_Go, paired = TRUE, alternative = "greater")
+## No significant difference between consumption after HighCalGo vs LowCalGo
+```
+
+## Hypothesis 3: Predicting food intake with N2 differences
+
+To test hypothesis 3: predicting food intake with baseline difference scores: (HighCalorie-NoGo - HighCalorieGo) - (LowCalorie-NoGo - LowCalorieGo). Note that in these analyses, we removed one outlier participant who indicated unrealistically high amounts of calories consumed in the food diary and four participants returned no food diary so are not included in the analysis for that outcome.
+
+
+```{r hypothesis3, results = "asis"}
+## Using the average across electrode sites to predict food intake
+full_withERP <- full_withERP %>% 
+  rowwise() %>%
+  mutate(., ERPBaselineDiff_allsites = mean(c(BaselineDiff_Cz, BaselineDiff_FC1, BaselineDiff_FC2, BaselineDiff_Fz)))
+## Regression for diary intake
+regression_daily <- lm(Daily_intake ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, Daily_intake_outlier == "0"))
+## And for lab food intake
+regression_labfood <- lm(total_in_lab ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP)
+
+stargazer::stargazer(regression_daily, regression_labfood, type = "html", star.cutoffs = c(0.05, 0.01, 0.001), report = "vc*sp")
+```
+
+As reported in the manuscript, we found no significant connection between this baseline difference score and food intake.
+
+## Hypothesis 4: Training effects on N2
+
+The hypothesis is that N2 difference scores become more pronounced with training, i.e. the values are more extreme in Cycle 2 than Cycle 1 and that this change is more pronounced for high calorie food (i.e. an interaction between differences with type of food). (As a reminder, this difference score is calculated as e.g. LowCalGo_DiffCz_1 = High_No.1.LowCalGo.Cz - Low_Go.1.LowCalGo.Cz, i.e. within Blocks and Cycles)
+
+```{r hypothesis4}
+ERP_anova_change <- full_withERP %>%
+  dplyr::select(pp, LowCalGo_DiffCz_1:HighCalGo_DiffFz_2) %>%
+  gather("Block.electrode.Cycle", "difference.score", LowCalGo_DiffCz_1:HighCalGo_DiffFz_2) %>%
+  separate(col = Block.electrode.Cycle, into = c("Block", "Electrode", "Cycle"), sep = "_")
+ERP_anova_change$Electrode = gsub(ERP_anova_change$Electrode, pattern = "Diff", replacement = "")
+
+aov_hypothesis5 <- aov_car(difference.score ~ Block*Cycle + Error(pp/Block*Cycle), 
+        data=ERP_anova_change, anova_table = list(es = "pes"))
+
+apaTables::apa.2way.table(Block, Cycle, difference.score, 
+                          show.marginal.means = TRUE,
+                          ERP_anova_change)
+
+
+
+difference_scores_plot <- afex::afex_plot(
+  aov_hypothesis5, 
+                x = "Cycle", 
+                trace = "Block",
+                error="within",
+                data_alpha = 0, # making the raw data points transparent
+                mapping = c("color"),
+                point_arg = list(size = 3), 
+                error_arg = list(size = 1, width = 0.2),
+                factor_levels = (list(Block = c("High-Calorie-No-Go", "Low-Calorie-No-Go"),
+                                       Cycle = c("T1", "T2")))) +
+                  labs(y = "N2 difference scores within Block (NoGo-Go)",
+                       x = "Timepoint") +
+  ylim(-3, 0) +
+  ggtitle("N2-difference score by Block and Cycle in the Biased Blocks") +
+  scale_color_manual(values = c("#009E73", "#D55E00"))  +
+  theme_minimal()
+
+difference_scores_plot
+```
+
+Also for this analysis I provide an additional plot to get a better idea of the data. 
+
+```{r hypothesis4_supp}
+Bias_Cycles <- full_withERP %>%
+  dplyr::select(pp,
+         HighGo_1_HighCalGo.allsites, HighGo_2_HighCalGo.allsites,
+         HighNo_1_LowCalGo.allsites, HighNo_2_LowCalGo.allsites,
+         LowGo_1_LowCalGo.allsites, LowGo_2_LowCalGo.allsites,
+         LowNo_1_HighCalGo.allsites, LowNo_2_HighCalGo.allsites) %>%
+  gather("Trial_Cycle_Block", "N2", HighGo_1_HighCalGo.allsites:LowNo_2_HighCalGo.allsites) %>%
+  separate(col = Trial_Cycle_Block, into = c("Trial", "Timepoint", "Block"), sep = "_") %>%
+  separate(col = "Trial", into = c("HighLow", "GoNo"), sep = -2, remove = FALSE) %>%
+  mutate(Block = as.factor(Block)) %>%
+  mutate(Block = recode(Block, HighCalGo.allsites = "Low-Calorie-No-Go", LowCalGo.allsites = "High-Calorie-No-Go")) %>%
+  group_by(HighLow, GoNo, Timepoint)
+
+aov_Biased_Blocks_Cycles <- aov_car(N2 ~ Block*GoNo*Timepoint + Error(pp/Block*GoNo*Timepoint),
+        data = Bias_Cycles)
+
+training_blocks_plot <- afex::afex_plot(aov_Biased_Blocks_Cycles, 
+                x = "Timepoint", 
+                trace = "GoNo", 
+                panel = "Block", 
+                error="within", 
+                data_alpha = 0.5, 
+                mapping = c("color"),
+                point_arg = list(size = 2.5),
+                error_arg = list(size = 1, width = 0.2),
+                legend_title = "Trial type",
+                factor_levels = (list(GoNo = c("Go", "No-Go"),
+                                       Timepoint = c("T1", "T2"),
+                                      Block = c("Low-Calorie-No-Go", "High-Calorie-No-Go"))))  +
+                  labs(y = "N2",
+                       title = "N2 amplitudes for Go- and No-Go trials in the training blocks") + 
+  scale_fill_discrete(name = "Dose") +
+  scale_color_manual(values = c("#009E73", "#D55E00")) +
+  theme_minimal()
+
+training_blocks_plot
+```
+
+Here we have the respective N2-amplitudes for Go- vs No-Go- and high- vs- low calorie trials in the two training blocks throughout the two timepoints. So in comparison with the last plot, this one shows the values for the actual kinds of trials instead of difference scores.
+
+
+# Additional analyses
+
+## Behavioral data
+
+The pre-registration mentions analyses of reaction times which we dropped to make the manuscript more stringent. For the interested reader, we here present those analyses and some illustrative graphs about reaction time data.
+
+### Describing the RT data
+
+This graph shows mean reaction times in the different blocks and divided into the 4 repetitions within the blocks. The small dots indicate individual means within the block and the larger ones are the overall means. RTs to high-calorie images are in green, low-calorie pictures in blue, and distractors in red. Note that in the bias blocks, there are dominant and rare trials, i.e. only few High-Calorie-Go-trials in the High-Calorie-No-Go block and vice versa. We see that reaction times are very similar across the different kinds of stimuli. Participants get faster in the biased blocks, apparently also to the rare Go-trials. Also, reactions to distractors are a bit slower (note that, unlike the food pictures, they are not predictive of Go or No-Go in any block).
+
+```{r visualize RT}
 ### Let's visualize some of this
 by_block_cycle <- full_withERP %>%
-  select(Subject,
-         High_Balanced_1,
-         High_Balanced_2,
-         High_Balanced_3,
-         High_Balanced_4,
-         Low_Balanced_1,
-         Low_Balanced_2,
-         Low_Balanced_3,
-         Low_Balanced_4,
-         High_HighGo_1,
-         High_HighGo_2,
-         High_HighGo_3,
-         High_HighGo_4,
-         Low_HighGo_1,
-         Low_HighGo_2,
-         Low_HighGo_3,
-         Low_HighGo_4,
-         High_LowGo_1,
-         High_LowGo_2,
-         High_LowGo_3,
-         High_LowGo_4,
-         Low_LowGo_1,
-         Low_LowGo_2,
-         Low_LowGo_3,
-         Low_LowGo_4,
+  dplyr::select(Subject,
+         Dist_HighGo_1:Low_Balanced_4,
          Order) %>%
   gather(Block, RT, -c(Subject, Order)) %>%
-  separate(Block, c("HighLow", "Part", "Cycle"))
+  separate(Block, c("HighLowDist", "Part", "Cycle"))
 
 by_block_cycle_means <- by_block_cycle %>%
-  group_by(HighLow, Part, Cycle) %>%
+  group_by(HighLowDist, Part, Cycle) %>%
   summarise(RT = mean(RT))
 
-ggplot(by_block_cycle, aes(x = Cycle, y = RT, color = HighLow)) +
+by_block_cycle %>%
+  group_by(HighLowDist, Part, Cycle) %>%
+  summarise_at(., vars(RT), funs(mean, sd))
+
+ggplot(by_block_cycle, aes(x = Cycle, y = RT, color = HighLowDist)) +
   geom_point(alpha = .3) +
   facet_wrap(aes(facets = Part)) +
   geom_point(data = by_block_cycle_means, stat = "identity", size = 5, alpha = .6) +
   ylim(250, 500)
 ```
 
-Without the "outlier" participants as defined above:
+This plot shows the raw data: The x-axis has the trial-number by block with RT on the y-axis and we have the three blocks separate. The colors show the different kinds of trials. 
 
-```{r visualize RTs by parts, echo=FALSE}
-### Let's visualize some of this
-by_block_cycle_noout <- full_withERP %>%
-  select(Subject,
-         High_Balanced_1,
-         High_Balanced_2,
-         High_Balanced_3,
-         High_Balanced_4,
-         Low_Balanced_1,
-         Low_Balanced_2,
-         Low_Balanced_3,
-         Low_Balanced_4,
-         High_HighGo_1,
-         High_HighGo_2,
-         High_HighGo_3,
-         High_HighGo_4,
-         Low_HighGo_1,
-         Low_HighGo_2,
-         Low_HighGo_3,
-         Low_HighGo_4,
-         High_LowGo_1,
-         High_LowGo_2,
-         High_LowGo_3,
-         High_LowGo_4,
-         Low_LowGo_1,
-         Low_LowGo_2,
-         Low_LowGo_3,
-         Low_LowGo_4,
-         Order) %>%
-  subset(full_withERP$outlier == 0) %>%
-  gather(Block, RT, -c(Subject, Order)) %>%
-  separate(Block, c("HighLow", "Part", "Cycle"))
-
-by_block_cycle_means_noout <- by_block_cycle_noout %>%
-  group_by(HighLow, Part, Cycle) %>%
-  summarise(RT = mean(RT))
-
-ggplot(by_block_cycle_noout, aes(x = Cycle, y = RT, color = HighLow)) +
-  geom_point(alpha = .3) +
-  facet_wrap(aes(facets = Part)) +
-  geom_point(data = by_block_cycle_means_noout, stat = "identity", size = 5, alpha = .6) +
-  ylim(250, 500)
-  
+```{r visualize raw RT}
+ggplot(test_dats, aes(x = trial_by_block, y = Stim.RT, colour = Primetype, group = Primetype)) + 
+  geom_point(size = 0.1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  facet_wrap(facet = "Running") + 
+  geom_smooth(method = "lm")
 ```
 
+### Differences between food types
 
+Now let's check the pre-registered hypothesis about reaction times to high- vs low-caloric foods at baseline.
 
-# Hypothesis 1: N2 by food image type and Go vs No-Go
-
-So here's the test for the first hypothesis:
-
-```{r}
-# Let's test our first hypothesis about the interaction between stimulus type and trial type in the balanced block
-aov_car(Value ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
-        data=subset(ERP_long, Block == "Balanced"))
-
-# So we have a significant effect of Go/No-Go but no interaction. 
-
-ERP_long_summary_Balanced <- subset(ERP_long, Block == "Balanced") %>% group_by(HighLow, GoNo) %>% summarise_at("Value", funs(mean, sd))
-# Looks like Low-calorie No-Go trials provoke the largest N2
-ggplot(ERP_long_summary_Balanced, aes(x = HighLow, y = mean, color = GoNo, group = GoNo)) +
-  geom_point() + 
-  geom_line(stat="identity") +
-  geom_errorbar(aes(ymin = mean-2*(sd/nrow(ERP_tidy)), ymax = mean+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1)
-```
-
-(NB: removing the participants with no and/or reversed GNG effect did not change results)
-
-## Without different outlier criteria:
-
-```{r}
-# Without any outliers
-aov_car(Value ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
-        data=subset(ERP_long, (Block == "Balanced" & outlier == "0")))
-
-# So we have a significant effect of Go/No-Go and of High vs Low but no interaction. 
-subset(ERP_long, (Block == "Balanced" & outlier == "0")) %>% group_by(HighLow, GoNo) %>% summarise_at("Value", mean)
-# Looks like Low-calorie No-Go trials provoke the largest N2
-
-
-# Without outliers but with the diary outliers
-aov_car(Value ~ HighLow*GoNo + Error(pp/HighLow*GoNo), 
-        data=subset(ERP_long, (Block == "Balanced" & outlier_notdaily == "0")))
-
-# So we have a significant effect of Go/No-Go but no other effects
-subset(ERP_long, (Block == "Balanced" & outlier_notdaily == "0")) %>% group_by(HighLow, GoNo) %>% summarise_at("Value", mean)
-# Looks like Low-calorie No-Go trials provoke the largest N2
-```
-
-Regardless of outliers we always find an effect of Go vs No with NoGo trials producing larger N2s (not surprisingly). However, the main effect of food type and the predicted interaction between Go/NoGo and food type are _never_ significant.
-
-# Hypothesis 2: Baseline RT differences
-
-Here's the t-test for baseline differences between High- and Low-calorie foods.
-
-```{r}
-# Let's do some inferential statistics
-## This is only for the BASELINE block
+```{r RTdiffBaseline}
 ### paired t-test to compare the different kinds of stimulus
 dat_t_test <- NA
 dat_t_test$High_Balanced <- (as.numeric(full_withERP$High_Balanced_1) + 
@@ -527,235 +537,91 @@ dat_t_test$Low_Balanced <- (as.numeric(full_withERP$Low_Balanced_1) +
                               as.numeric(full_withERP$Low_Balanced_2) +
                               as.numeric(full_withERP$Low_Balanced_3) +
                               as.numeric(full_withERP$Low_Balanced_4))/4
-
+dat_t_test <- as.data.frame(dat_t_test)
 t.test(dat_t_test$High_Balanced, dat_t_test$Low_Balanced, paired = TRUE, alternative = "less")
 ```
 
-There's no difference between the types of food images.  
-
-## Without the "outlier" participants as defined above:
+And this is Cohen's _d_ for this comparison.
 
 ```{r}
-# Let's do some inferential statistics
-## This is only for the BASELINE block
+lsr::cohensD(dat_t_test$High_Balanced, dat_t_test$Low_Balanced)
+```
+
+There's no significant difference between reaction times towards the two types of food images. 
+
+Of course, we can also check for this in the biased blocks, using the respective dominant Go-trials.
+
+```{r RTdiffBias}
 ### paired t-test to compare the different kinds of stimulus
-dat_t_test_noout <- NA
-dat_t_test_noout$High_Balanced <- subset((as.numeric(full_withERP$High_Balanced_1) + 
-                               as.numeric(full_withERP$High_Balanced_2) +
-                               as.numeric(full_withERP$High_Balanced_3) +
-                               as.numeric(full_withERP$High_Balanced_4)), full_withERP$outlier == 0)/4
-dat_t_test_noout$Low_Balanced <- subset((as.numeric(full_withERP$Low_Balanced_1) + 
-                              as.numeric(full_withERP$Low_Balanced_2) +
-                              as.numeric(full_withERP$Low_Balanced_3) +
-                              as.numeric(full_withERP$Low_Balanced_4)), full_withERP$outlier == 0)/4
-
-t.test(dat_t_test_noout$High_Balanced, dat_t_test_noout$Low_Balanced, 
-       paired = TRUE, alternative = "less")
-
-## And without the outliers defined without diary intake
-dat_t_test_noout2 <- NA
-dat_t_test_noout2$High_Balanced <- subset((as.numeric(full_withERP$High_Balanced_1) + 
-                               as.numeric(full_withERP$High_Balanced_2) +
-                               as.numeric(full_withERP$High_Balanced_3) +
-                               as.numeric(full_withERP$High_Balanced_4)), full_withERP$outlier_notdaily == 0)/4
-dat_t_test_noout2$Low_Balanced <- subset((as.numeric(full_withERP$Low_Balanced_1) + 
-                              as.numeric(full_withERP$Low_Balanced_2) +
-                              as.numeric(full_withERP$Low_Balanced_3) +
-                              as.numeric(full_withERP$Low_Balanced_4)), full_withERP$outlier_notdaily == 0)/4
-
-t.test(dat_t_test_noout2$High_Balanced, dat_t_test_noout2$Low_Balanced, 
-       paired = TRUE, alternative = "less")
+dat_t_test <- NA
+dat_t_test$High_Balanced <- (as.numeric(full_withERP$High_HighGo_1) + 
+                               as.numeric(full_withERP$High_HighGo_2) +
+                               as.numeric(full_withERP$High_HighGo_3) +
+                               as.numeric(full_withERP$High_HighGo_4))/4
+dat_t_test$Low_Balanced <- (as.numeric(full_withERP$Low_LowGo_1) + 
+                              as.numeric(full_withERP$Low_LowGo_2) +
+                              as.numeric(full_withERP$Low_LowGo_3) +
+                              as.numeric(full_withERP$Low_LowGo_4))/4
+dat_t_test <- as.data.frame(dat_t_test)
+t.test(dat_t_test$High_Balanced, dat_t_test$Low_Balanced, paired = TRUE, alternative = "less")
 ```
 
-### Add-on: Food type and cycles
-
-Now we're looking at reaction time differences between High and Low calorie foods and between Cycles.
+And again Cohen's _d_.
 
 ```{r}
-## Testing reaction time differences between High and Low calorie foods and between Cycles
-### Getting the data into right format
-regression_dat <- full_withERP %>% 
-  gather("Trial_Part_Cycle", "RT", 15:38) %>%
-  separate(Trial_Part_Cycle, into = c("Trial", "Part", "Cycle"))
-
-fit_baseline_blocks <- lmerTest::lmer(RT ~ Trial*Cycle + (1|Subject),
-            data=subset(regression_dat, Part == "Balanced"))
-
-anova_baseline_blocks <- anova(fit_baseline_blocks)
-anova_baseline_blocks
-summary(fit_baseline_blocks, correlation = FALSE)
-## Significant effect of Cycle - contrasts: Participants are faster in Cycle 4 than Cycle 1. 
-## No effect of food type and/or interaction.
+lsr::cohensD(dat_t_test$High_Balanced, dat_t_test$Low_Balanced)
 ```
 
-So we see that Cycle 4 is faster than Cycle 1.
+Also here in the biased blocks, we see no difference between the two food types.
 
-And a graph to go with it:
+### Using RT-bias to predict food intake
 
-```{r, echo = FALSE}
-## Here it is in a graph:
-Running_Cycle_balanced <- subset(test_dats, (Primetype == "HighGo" & Running == "TrialListTestBalanced")|(Primetype == "LowGo" & Running == "TrialListTestBalanced")) %>%
-  group_by(Cycle, Running, Primetype) %>% 
-  summarise(Stim.RT = mean(Stim.RT))
-
-ggplot(data = Running_Cycle_balanced, aes(x = Cycle, y = Stim.RT , color = Primetype)) +
-  geom_point(size = 2)
-```
-
-#### Without outlier participants:
+Here we test how well the RT-bias, i.e. the difference in reaction times between food types, predicts food intake, in- and outside the laboratory.
 
 ```{r}
-### Testing reaction time differences between High and Low calorie foods and between Cycles
-fit_baseline_blocks_noout <- lmerTest::lmer(RT ~ Trial*Cycle + (1|Subject),
-            data=subset(regression_dat, Part == "Balanced" & outlier == "0"))
-
-anova_baseline_blocks_noout <- anova(fit_baseline_blocks_noout)
-anova_baseline_blocks_noout
-summary(fit_baseline_blocks_noout, correlation = FALSE)
-## Significant effect of Cycle - contrasts: Participants are faster in Cycle 4 than Cycle 1. 
-## No effect of food type and/or interaction.
+# We first need to construct an RT-bias variable
+full_withERP$baseline_high_go <- (full_withERP$High_Balanced_1 + full_withERP$High_Balanced_2 +
+                                full_withERP$High_Balanced_3 + full_withERP$High_Balanced_4)/4
+full_withERP$baseline_low_go <- (full_withERP$Low_Balanced_1 + full_withERP$Low_Balanced_2 +
+                                full_withERP$Low_Balanced_3 + full_withERP$Low_Balanced_4)/4
+full_withERP$baseline_RTbias <- full_withERP$baseline_high_go - full_withERP$baseline_low_go
 ```
 
+```{r, results="asis"}
+## Let's do a regression with High-Cal-Go RT minus Low-Cal-Go RT at baseline (baseline_RTbias) 
+## predicting food intake
 
-### And then the bias blocks.
-
-```{r}
-## Now for the bias blocks
-## Comparing reaction times for dominant Go trials from the respective blocks 
-## and between Cycles within the respective blocks 
-
-fit_bias_blocks <- lmerTest::lmer(RT ~ Trial*Cycle + (1|Subject),
-            data=subset(regression_dat, 
-                        (Trial == "High" & Part == "HighGo")|( Trial == "Low" & Part == "LowGo")))
-anova_bias_blocks <- anova(fit_bias_blocks)
-anova_bias_blocks
-summary(fit_bias_blocks, correlation = FALSE)
-## There are no significant effects whatsoever
-
-### Visualize much?!
-Running_Cycle_bias <- subset(test_dats, 
-                             (Primetype == "HighGo" & Running == "TrialListHighCalGo")|(Primetype == "LowGo" & Running == "TrialListLowCalGo")) %>%
-  group_by(Cycle, Running, Primetype) %>% 
-  summarise(Stim.RT = mean(Stim.RT))
-
-ggplot(data = Running_Cycle_bias, aes(x = Cycle, y = Stim.RT , color = Running, shape = Primetype)) +
-  geom_point(size = 2)
-```
-
-No significant effects of cycles, food stimuli, or their interaction.
-
-#### And without outlier participants:
-
-```{r}
-## Now for the bias blocks
-## Comparing reaction times for dominant Go trials from the respective blocks 
-## and between Cycles within the respective blocks 
-
-fit_bias_blocks_noout <- lmerTest::lmer(RT ~ Trial*Cycle + (1|Subject),
-            data=subset(regression_dat, 
-                        (Trial == "High" & Part == "HighGo")|( Trial == "Low" & Part == "LowGo") & 
-                          outlier == 0))
-anova_bias_blocks_noout <- anova(fit_bias_blocks_noout)
-anova_bias_blocks_noout
-summary(fit_bias_blocks_noout, correlation = FALSE)
-## There are no significant effects whatsoever
-```
-
-No significant effects for Cycle in the bias blocks.
-
-# Hypothesis 3: Predicting food intake with N2 differences
-
-To test hypothesis 3: predicting food intake with baseline difference scores: (HighCalorie-NoGo - HighCalorieGo) - (LowCalorie-NoGo - LowCalorieGo).
-I always have the model including all participants and then when removing outliers.
-
-```{r}
-# For Cz
-## Regression for diary intake
-summary(lm(Daily_intake ~ BaselineDiff_Cz + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(Daily_intake ~ BaselineDiff_Cz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-# No effect
-
+reg_RT_diary <- lm(Daily_intake ~ baseline_RTbias + as.numeric(Age) + Sex + BMI,
+           data = full_withERP)
 ## And for lab food intake
-summary(lm(total_in_lab ~ BaselineDiff_Cz + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(total_in_lab ~ BaselineDiff_Cz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-summary(lm(total_in_lab ~ BaselineDiff_Cz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier_notdaily == "0")))
-# No effect
-
-# For FC1
-## Regression for diary intake
-summary(lm(Daily_intake ~ BaselineDiff_FC1 + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(Daily_intake ~ BaselineDiff_FC1 + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-# No effect
-
-## And for lab food intake
-summary(lm(total_in_lab ~ BaselineDiff_FC1 + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(total_in_lab ~ BaselineDiff_FC1 + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-summary(lm(total_in_lab ~ BaselineDiff_FC1 + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier_notdaily == "0")))
-# No effect
-
-# For FC2
-## Regression for diary intake
-summary(lm(Daily_intake ~ BaselineDiff_FC2 + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(Daily_intake ~ BaselineDiff_FC2 + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-# No effect
-
-## And for lab food intake
-summary(lm(total_in_lab ~ BaselineDiff_FC2 + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(total_in_lab ~ BaselineDiff_FC2 + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-summary(lm(total_in_lab ~ BaselineDiff_FC2 + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier_notdaily == "0")))
-# No effect
-
-# For Fz
-## Regression for diary intake
-summary(lm(Daily_intake ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(Daily_intake ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-# No effect
-
-## And for lab food intake
-summary(lm(total_in_lab ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(total_in_lab ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-summary(lm(total_in_lab ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier_notdaily == "0")))
-# No effect
-
-## And, last but not least, for an average across electrode sites
-full_withERP$ERPBaselineDiff_allsites <- 
-  rowMeans(full_withERP[c("BaselineDiff_Cz", "BaselineDiff_FC1", "BaselineDiff_FC2", "BaselineDiff_Fz")])
-## Regression for diary intake
-summary(lm(Daily_intake ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(Daily_intake ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-## And for lab food intake
-summary(lm(total_in_lab ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP))
-summary(lm(total_in_lab ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier == "0")))
-summary(lm(total_in_lab ~ ERPBaselineDiff_allsites + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, outlier_notdaily == "0")))
+reg_RT_lab <- lm(total_in_lab ~ baseline_RTbias + as.numeric(Age) + Sex + BMI, 
+           data = full_withERP)
+### Both regression coefficients are not significant
+stargazer::stargazer(reg_RT_diary, reg_RT_lab, digits = 2, type = "html", star.cutoffs = c(0.05, 0.01, 0.001))
 ```
 
-None of the electrode sites show an effect (whether we include outliers or not), so we can confidently conclude that N2-baseline bias was not predictive of food intake inside and outside the laboratory.
+This analysis shows no significant predictive value for food intake (inside the lab or outside) of the RT-differences between high-and low-calorie images.
 
-(NB: removing the participants with no and/or reversed GNG effect did not change results)
+### Error rates
 
-# Hypothesis 4: Food intake outcomes.
-
-We see _higher_ food consumption after the _Low-Calorie-Go_ condition.
-
+Overall, we found very small error rates - it seems the task was fairly easy. Let's take a look.
 ```{r}
-# Let's look at some of the food intake outcomes
-## Lab intake
-full_withERP %>% summarise_at(vars(after_High_Cal_Go, after_Low_Cal_Go), funs(mean, sd))
-### Descriptively, participants ate MORE after Low_Cal_Go (against the hypothesis!)
-### Let's run a t-test on that
-t.test(full_withERP$after_High_Cal_Go, full_withERP$after_Low_Cal_Go, paired = TRUE, alternative = "greater")
-## No significant difference between consumption after HighCalGo vs LowCalGo
-
-## Lab intake by timepoint
-full_withERP %>% summarise_at(vars(consumed_T1, consumed_T2), mean)
-t.test(full_withERP$consumed_T1, full_withERP$consumed_T2, paired = TRUE, alternative = "greater") 
-#No significant differences between timepoints
+test_dats_raw %>%
+  subset(., Running == "TrialListTestBalanced" | 
+           Running == "TrialListHighCalGo" | 
+           Running == "TrialListLowCalGo") %>%
+  group_by(Running) %>%
+  summarise_at(., vars(commission, ommission), funs(mean, sd))
 ```
 
-To give an idea about how much participants ate at the two time points:
+
+
+## Laboratory food intake
+
+Here is a graph to illustrate how much people ate at the two occasions and how it changed from T1 to T2 for the individuals.
 
 ```{r}
-lab_intake_time <- select(full_withERP,
+lab_intake_time <- dplyr::select(full_withERP,
                      Subject,
                      consumed_T1, 
                      consumed_T2) %>%
@@ -766,231 +632,95 @@ mean_lab_intake_time <- lab_intake_time %>%
 ggplot(lab_intake_time, aes(timepoint, amount, group = Subject, color = Subject)) + 
   geom_point(alpha = 0.3) +
   geom_line(stat = "identity")
-
-lab_intake_training <- select(full_withERP,
-                          Subject,
-                          after_High_Cal_Go, 
-                          after_Low_Cal_Go) %>%
-  gather("training", "amount", -Subject)
-ggplot(lab_intake_training, aes(training, amount, group = Subject, color = Subject)) + 
-  geom_point() +
-  geom_line(stat = "identity")
 ```
 
-## Without the outlier participants
+We might expect that the effect of the training worked only at the first timepoint because participants were then saturated at T2. To test for this, we conduct an independent samples t-test with the training block conducted _first_ as the independent variable and candy consumption at T1 as the outcome.
 
-```{r}
-# Let's look at some of the food intake outcomes
-## Lab intake
+```{r, results="asis"}
+food_time_points <- lm(consumed_T1 ~ Order, data = full_withERP)
+stargazer::stargazer(food_time_points, type = "html", star.cutoffs = c(0.05, 0.01, 0.001), report = "vc*sp")
+# To get descriptives:
 full_withERP %>% 
-  subset(outlier == 0) %>%
-  summarise_at(vars(after_High_Cal_Go, after_Low_Cal_Go), mean)
-### Descriptively, participants ate MORE after Low_Cal_Go (against the hypothesis!)
-### Let's run a t-test on that
-t.test(subset(full_withERP$after_High_Cal_Go, full_withERP$outlier == 0), 
-       subset(full_withERP$after_Low_Cal_Go, full_withERP$outlier == 0), 
-       paired = TRUE, alternative = "less")
-### A one-sided t-test does not show a signigicant difference
-
-## Lab intake by timepoint
-full_withERP %>% 
-  subset(outlier == 0) %>%
-  summarise_at(vars(consumed_T1, consumed_T2), mean)
-t.test(subset(full_withERP$consumed_T1, full_withERP$outlier == 0), subset(full_withERP$consumed_T2, full_withERP$outlier == 0),
-       paired = TRUE, alternative = "greater") 
-#No significant differences between timepoints
+  group_by(Order) %>%
+  summarize_at(., "consumed_T1", funs(mean, sd))
 ```
 
-And again, some visualization:
+We see that this is not the case. Note, however, that we only have 25 people in each group here since we analyse it as a between-subjects design, so power is probably really low.
 
-```{r}
-lab_intake_time <- full_withERP %>% 
-  subset(outlier == 0) %>% 
-  select(Subject,
-         consumed_T1, 
-         consumed_T2) %>%
-  gather("timepoint", "amount", -Subject)
+## Regressions for food intake by electrode
 
-ggplot(lab_intake_time, aes(timepoint, amount, group = Subject, color = Subject)) + 
-  geom_point() +
-  geom_line(stat = "identity")
+In the manuscript, we used an average of all electrode sites for the prediction of food intake. Here, I present additionally separate regression models for the 4 electrode sites of interest. But we see that at none of the electrode sites is there a significant effect.
 
-lab_intake_training <- full_withERP %>% 
-  subset(outlier == 0) %>% 
-  select(Subject,
-         consumed_T1, 
-         consumed_T2) %>%
-  gather("training", "amount", -Subject)
-
-ggplot(lab_intake_training, aes(training, amount, group = Subject, color = Subject)) + 
-  geom_point() +
-  geom_line(stat = "identity")
-```
-
-
-# Hypothesis 5: Training effects on N2
-
-The hypothesis is that N2 becomes more pronounced with training, i.e. the values are more extreme in Cycle 2 than Cycle 1 and that this change is more pronounced for high calorie food (i.e. an interaction between differences with type of food).
-
-```{r}
-ERP_anova_change <- full_withERP %>%
-  select(pp, LowCalGo_DiffCz_1:HighCalGo_DiffFz_2, outlier, outlier_notdaily) %>%
-  gather("Block.electrode.Cycle", "difference.score", LowCalGo_DiffCz_1:HighCalGo_DiffFz_2) %>%
-  separate(col = Block.electrode.Cycle, into = c("Block", "Electrode", "Cycle"), sep = "_")
-
-aov_car(difference.score ~ Block*Cycle + Error(pp/Block*Cycle), 
-        data=ERP_anova_change)
-
-## We have a main effect for Cycle (with later cycle showing stronger N2 difference scores) 
-## but no main effect of Block or interaction effect.
-
-summary_ERP_change <- ERP_anova_change %>% 
-  group_by(Block, Cycle) %>% 
-  summarise_at(., "difference.score", funs(mean, median, sd))
-
-ggplot(summary_ERP_change, aes(Cycle, mean, colour = Block, group = Block)) +
-  geom_point() +
-  geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean-2*(sd/49), ymax = mean+2*(sd/49)), inherit = TRUE, width = 0.1) +
-  xlab("Time") +
-  ylab("N2-difference score")
-```
-
-So we _do_ see the expected main effect of Cycle, but no main effect of Block and _no_ interaction.
-
-(NB: removing the participants with no and/or reversed GNG effect did not change results)
-
-## Without outliers
-
-Without all kinds of outliers:
-
-```{r}
-aov_car(difference.score ~ Block*Cycle + Error(pp/Block*Cycle), 
-        data=subset(ERP_anova_change, outlier == 0))
-
-## Same as with outliers
-
-ggplot(subset(ERP_anova_change, outlier == 0), aes(Cycle, difference.score, color = Block)) + geom_boxplot()
-subset(ERP_anova_change, outlier == 0) %>% group_by(Block, Cycle) %>% summarise_at(., "difference.score", funs(mean, sd))
-```
-
-And admitting the outlier criterion not including diary intake:
-
-```{r}
-aov_car(difference.score ~ Block*Cycle + Error(pp/Block*Cycle), 
-        data=subset(ERP_anova_change, outlier_notdaily == 0))
-
-## And again the same.
-
-ggplot(subset(ERP_anova_change, outlier_notdaily == 0), aes(Cycle, difference.score, color = Block)) + geom_boxplot()
-subset(ERP_anova_change, outlier_notdaily == 0) %>% group_by(Block, Cycle) %>% summarise_at(., "difference.score", funs(mean, sd))
-```
-
-# An add-on to Hypothesis 3: RT-bias and food intake
-
-## Baseline RT bias
-
-Using baseline RT-bias to predict food intake:
-
-```{r}
-# Diary data
-summary(full_withERP$Daily_intake) 
-# So the average reported intake is 8360 kJ with a max of 29521 kJ (7055 kcal) 
-# and a min of 2380 kJ (569 kcal)
-
-ggplot(full_withERP, aes(Subject, Daily_intake)) + 
-  geom_point()
-
-## Let's do a regression with High-Cal-Go minus Low-Cal-Go at baseline (baseline bias) 
-## predicting food intake
-
-summary(lm(Daily_intake ~ baseline_RTbias + as.numeric(Age) + Sex + BMI, data = full_withERP))
-## And for lab food intake
-summary(lm(total_in_lab ~ baseline_RTbias + as.numeric(Age) + Sex + BMI, data = full_withERP))
-### Both regression coefficients are not significant
-```
-
-So here we see that the "baseline bias" (i.e. reaction times to high-calorie items minus reaction times to low-calorie items) is _not_ related to intake as reported in the diary or in the lab.
-
-### Without outlier participants
-
-```{r}
-# Diary data
-summary(subset(full_withERP$Daily_intake, full_withERP$outlier == 0)) 
-# So the average reported intake is 7891 kJ with a max of 17270 kJ and a min of 3369 kJ
-ggplot(subset(full_withERP, outlier==0), aes(Subject, Daily_intake)) + 
-  geom_point()
-
-## Let's do a regression with High-Cal-Go minus Low-Cal-Go at baseline (baseline bias) 
-## predicting food intake
-
-summary(lm(Daily_intake ~ baseline_RTbias + as.numeric(Age) + Sex + BMI, 
-           data = subset(full_withERP, outlier==0)))
-## And for lab food intake
-summary(lm(total_in_lab ~ baseline_RTbias + as.numeric(Age) + Sex + BMI, 
-           data = subset(full_withERP, outlier==0)))
-### Both regression coefficients are not significant
-```
-
-So there is still no association between baseline RT bias and food intake.
-
-## Training RT bias
-
-Now we'll also look at bias in the training blocks, i.e. reaction times to dominant Go-trials in the respective blocks.
-
-```{r}
-# Regression
-summary(lm(Daily_intake ~ training_RTbias + as.numeric(Age) + Sex + BMI, data = full_withERP))
-# the training bias is predictive of diary intake! (p = .045, though)
+```{r, results="asis"}
+# For Cz
+## Regression for diary intake
+model1 <- lm(Daily_intake ~ BaselineDiff_Cz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, Daily_intake_outlier == "0"))
 
 ## And for lab food intake
-summary(lm(total_in_lab ~ training_RTbias + as.numeric(Age) + Sex + BMI, data = full_withERP))
-### Not significant
-```
+model2 <- lm(total_in_lab ~ BaselineDiff_Cz + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP)
 
-So training bias is predictive of food intake as reported in the food diary (at _p_=.045, though) but not of in-lab fod intake.
-
-### Without outlier participants
-
-```{r}
-# Regression
-summary(lm(Daily_intake ~ training_RTbias + as.numeric(Age) + Sex + BMI, 
-           data = subset(full_withERP, outlier==0)))
-# the training bias is not predictive of diary intake!
+# For FC1
+## Regression for diary intake
+model3 <- lm(Daily_intake ~ BaselineDiff_FC1 + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, Daily_intake_outlier == "0"))
 
 ## And for lab food intake
-summary(lm(total_in_lab ~ training_RTbias + as.numeric(Age) + Sex + BMI, 
-           data = subset(full_withERP, outlier==0)))
-### Not significant 
+model4 <- lm(total_in_lab ~ BaselineDiff_FC1 + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP)
 
-ggplot(data = subset(full_withERP, outlier==0), 
-       aes(x = baseline_RTbias, y = total_in_lab)) +
-         geom_point() +
-         geom_smooth(method = "lm")
+# For FC2
+## Regression for diary intake
+model5 <- lm(Daily_intake ~ BaselineDiff_FC2 + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, Daily_intake_outlier == "0"))
+
+## And for lab food intake
+model6 <- lm(total_in_lab ~ BaselineDiff_FC2 + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP)
+
+# For Fz
+## Regression for diary intake
+model7 <- lm(Daily_intake ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = subset(full_withERP, Daily_intake_outlier == "0"))
+
+## And for lab food intake
+model8 <- lm(total_in_lab ~ BaselineDiff_Fz + as.numeric(Age) + Sex + BMI + overall_hunger, data = full_withERP)
+
+
+stargazer::stargazer(model1, model2, model3, model4, model5, model6, model7, model8, type = "html", digits = 2, star.cutoffs = c(0.05, 0.01, 0.001), report = "vc*sp")
 ```
 
-But no significant relation left after removing outliers.
+So we see that there is no significant relation at an alpha-level of .05 between food intake and the bias scores, no matter where the ERP was recorded.
 
-# Relation between N2 differences and training effects
-So now we check whether the difference between intake after High-Calorie Go and Low-Calorie Go is related to the baseline N2 difference score (the score from hypothesis 3).
+## ERPs for non-dominant trials
+
+In all analyses, we only used dominant trials in the biased blocks. However, we also have the rare trials which are included in the following graph. We see all four trial types in the training blocks with the Low-Calorie-No-Go block on the left and the High-Calorie-No-Go block on the right. It is important to note, however, that these estimates are not very reliable as they come from very few trials.
 
 ```{r}
-summary(lm(lab_food_diff ~ ERPBaselineDiff_allsites, data = full_withERP))
+Bias_Cycles_withrares <- full_withERP %>%
+  dplyr::select(pp,
+                HighGo_1_HighCalGo.allsites, HighGo_2_HighCalGo.allsites,
+                HighNo_1_LowCalGo.allsites, HighNo_2_LowCalGo.allsites,
+                LowGo_1_LowCalGo.allsites, LowGo_2_LowCalGo.allsites,
+                LowNo_1_HighCalGo.allsites, LowNo_2_HighCalGo.allsites,
+                HighGo_1_LowCalGo.allsites, HighGo_2_LowCalGo.allsites,
+                HighNo_1_HighCalGo.allsites, HighNo_2_HighCalGo.allsites,
+                LowGo_1_HighCalGo.allsites, LowGo_2_HighCalGo.allsites,
+                LowNo_1_LowCalGo.allsites, LowNo_2_LowCalGo.allsites) %>%
+  gather("Trial_Cycle_Block", "N2", HighGo_1_HighCalGo.allsites:LowNo_2_LowCalGo.allsites) %>%
+  separate(col = Trial_Cycle_Block, into = c("Trial", "Timepoint", "Block"), sep = "_") %>%
+  separate(col = "Trial", into = c("HighLow", "GoNo"), sep = -2, remove = FALSE) %>%
+  mutate(Block = as.factor(Block)) %>%
+  mutate(Block = recode(Block, HighCalGo.allsites = "Low-Calorie-No-Go", LowCalGo.allsites = "High-Calorie-No-Go"))
+  
+Bias_Cycles_withrares_means <- Bias_Cycles_withrares %>% 
+  group_by(HighLow, GoNo, Timepoint, Block) %>%
+  summarise_at(., vars(N2), funs(mean))
+
+ggplot(Bias_Cycles_withrares, aes(x = Timepoint, y = N2, color = GoNo, shape = HighLow)) +
+  geom_point(alpha = 0.3) +
+  facet_wrap(facet = "Block") +
+  geom_point(data = Bias_Cycles_withrares_means, stat = "identity", size = 5, alpha = .6) +
+  scale_colour_manual(values = c("#009E73", "#D55E00"))
 ```
 
-There is no relation between these two.
+## ERP change predicting food intake
 
-## Without outliers
-```{r}
-summary(lm(lab_food_diff ~ ERPBaselineDiff_allsites, data = subset(full_withERP, outlier==0)))
-summary(lm(lab_food_diff ~ ERPBaselineDiff_allsites, data = subset(full_withERP, outlier_notdaily==0)))
-```
-
-And removing outliers doesn't change anything about that.
-
-# N2-difference change values
-
-Let's create a variable indicating the change in N2-bias from Cycle 1 to Cycle 2 in the training blocks (an indidvidual "training score" if you will).
+To investigate whether _change_ in N2-bias during the training predicts food intake, we run a regression for this. So we create a variable indicating the change in N2-bias from Cycle 1 to Cycle 2 in the training blocks (an indidvidual "training score" if you will). Then we use that score as a predictor for food intake _after that block_.
 
 ```{r}
 full_withERP$N2_bias_change_LowCalGo_Cz <- (full_withERP$LowCalGo_DiffCz_1 - full_withERP$LowCalGo_DiffCz_2)
@@ -1008,255 +738,69 @@ full_withERP$N2_bias_change_HighCalGo <-
   rowMeans(full_withERP[c("N2_bias_change_HighCalGo_Cz", "N2_bias_change_HighCalGo_FC1", "N2_bias_change_HighCalGo_FC2", "N2_bias_change_HighCalGo_Fz")])
 ```
 
-And let's see how these "training scores" relate to food intake:
-
 ```{r}
 # For the learning scores in the LowCalGo block
-summary(lm(Daily_intake ~ N2_bias_change_LowCalGo, data = full_withERP))
-# For the learning scores in the LowCalGo block
-summary(lm(Daily_intake ~ N2_bias_change_HighCalGo, data = full_withERP))
+LowCalGo_change_reg <- lm(after_Low_Cal_Go ~ N2_bias_change_LowCalGo, data = full_withERP)
+# For the learning scores in the HighCalGo block
+HighCalGo_change_reg <- lm(after_High_Cal_Go ~ N2_bias_change_HighCalGo, data = full_withERP)
+```
+```{r, results = "asis"}
+stargazer::stargazer(LowCalGo_change_reg, HighCalGo_change_reg, type = "html", digits = 2, star.cutoffs = c(0.05, 0.01, 0.001), report = "vc*sp")
 ``` 
 
-No significant relation.
+So apparently this "training score" has no effect on food intake in the laboratory.
 
-# N2 change values
+## Food liking
 
-Now here I create _change_ scores by trial type, so how much did N2 change from T1 to T2, depending on calorie content and Go vs No-Go.
+Here is a simple summary table for the average food liking ratings.
 
-```{r}
-# Let's create change scores by trial type:
-full_withERP$N2change_HighGo <- 
-  (full_withERP$HighGo_1_HighCalGo.allsites - full_withERP$HighGo_2_HighCalGo.allsites)
-full_withERP$N2change_HighNo <- 
-  (full_withERP$HighNo_1_LowCalGo.allsites - full_withERP$HighNo_2_LowCalGo.allsites)
-
-full_withERP$N2change_LowGo <- 
-  (full_withERP$LowGo_1_LowCalGo.allsites - full_withERP$LowGo_2_LowCalGo.allsites)
-full_withERP$N2change_LowNo <- 
-  (full_withERP$LowNo_1_HighCalGo.allsites - full_withERP$LowNo_2_HighCalGo.allsites)
-
-N2_change_df <- full_withERP %>%
-  select(N2change_HighGo:N2change_LowNo, pp) %>%
-  gather("trialtype", "N2_change", N2change_HighGo:N2change_LowNo) %>%
-  separate(col = trialtype, into = c("HighLow", "GoNo"), sep = -2) %>%
-  mutate(., HighLow = sapply(strsplit(HighLow, split = "_", fixed = TRUE), function(x) (x[2])))
-
-aov_car(N2_change ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
-        data=N2_change_df)
-# This shows that the CHANGE in N2 does not differ between trial types, i.e. it's the same for Go/No-Go trials and High/Low calorie stimuli
-
-plot_N2_change_df <- 
-  N2_change_df %>% 
-  group_by(HighLow, GoNo) %>% 
-  summarise_at(., "N2_change", funs("mean_change" = mean, sd))
-
-ggplot(plot_N2_change_df, aes(x = GoNo, y = mean_change, colour = HighLow)) +
-  geom_point() + 
-  geom_errorbar(aes(ymin = mean_change-2*(sd/nrow(ERP_tidy)), ymax = mean_change+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1)
-# Obviously, the standard deviation is really large - there's a lot of variation in the N2 amplitudes
-# But also, N2 on No-Go trials really hardly changes at all.
-```
-
-Let's ignore the training effects for a moment and focus on _overall_ N2s in the bias blocks.
-
-```{r}
-ERP_plot_by_trialtype <- full_withERP %>%
-  select(pp,
-         HighGo_1_HighCalGo.allsites,
-         HighGo_2_HighCalGo.allsites,
-         LowNo_1_HighCalGo.allsites,
-         LowNo_2_HighCalGo.allsites,
-         HighNo_1_LowCalGo.allsites,
-         HighNo_2_LowCalGo.allsites, 
-         LowGo_1_LowCalGo.allsites, 
-         LowGo_2_LowCalGo.allsites)%>%
-  gather("Trial.Cycle.Block", "N2", HighGo_1_HighCalGo.allsites:LowGo_2_LowCalGo.allsites) %>%
-  separate(col = Trial.Cycle.Block, into = c("Trial", "Cycle", "Block"), sep = "_")
-
-ERP_plot_2by2Trial <- ERP_plot_by_trialtype %>%
-  separate(col = Trial, into = c("HighLow", "GoNo"), sep = -2)
-
-ERP_plot_by_trialtype_summary <- ERP_plot_2by2Trial %>% group_by(HighLow, GoNo) %>% summarise_at(., "N2", funs(mean, sd))
-
-ggplot(ERP_plot_by_trialtype_summary, aes(x = HighLow, mean, color = GoNo, group = GoNo)) +
-  geom_point() + 
-  geom_errorbar(aes(ymin = mean-2*(sd/49), ymax = mean+2*(sd/49)), inherit = TRUE, width = 0.1)
-
-aov_car(N2 ~ HighLow*GoNo + Error(pp/HighLow*GoNo),
-                                  data = ERP_plot_2by2Trial)
-```
-
-And now let's include Cycle again as a variable to take another closer look.
-
-```{r}
-ERP_plot_by_trialtype_by_Cycle_summary <- ERP_plot_2by2Trial %>% group_by(HighLow, GoNo, Cycle) %>% summarise_at(., "N2", funs(mean, sd))
-
-ggplot(ERP_plot_by_trialtype_by_Cycle_summary, aes(x = Cycle, mean, color = GoNo, group = GoNo)) +
-  geom_point() + 
-  geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean-2*(sd/nrow(ERP_tidy)), ymax = mean+2*(sd/nrow(ERP_tidy))), width = 0.1) +
-  facet_wrap(aes(Facets = HighLow)) +
-  ggtitle("Mean Ns for dominant trials in the Bias blocks")
-
-aov_car(N2 ~ HighLow*GoNo*Cycle + Error(pp/HighLow*GoNo*Cycle), 
-        data = ERP_plot_2by2Trial)
-```
-
-This is looking at Go vs NoGo, High vs Low, and Cycle instead of difference scores (which, of course, leads to nasty three-way interaction terms). Again, there's significant main effects of GoNo but nothing else.
-All this indicates that N2 is just less on Go than on NoGo trials (which is pretty trivial). On the bright side, there are no three-way interactions to interpret...
-
-Let's check out the time course in the Balanced block to see if there is a training effect there already.
-
-```{r}
-Balanced_Cycles <- full_withERP %>%
-  select(pp,
-         HighGo_1_Balanced.allsites:LowNo_2_Balanced.allsites) %>%
-  gather("Trial_Cycle_Block", "N2", HighGo_1_Balanced.allsites:LowNo_2_Balanced.allsites) %>%
-  separate(col = Trial_Cycle_Block, into = c("Trial", "Cycle", "Block"), sep = "_") %>%
-  separate(col = "Trial", into = c("HighLow", "GoNo"), sep = -2) %>%
-  group_by(HighLow, GoNo, Cycle)
-
-Balanced_Cycles_summary <- Balanced_Cycles %>%
-  summarise_at(., "N2", funs("mean_N2" = mean, sd))
-
-ggplot(Balanced_Cycles_summary, aes(x = Cycle, y = mean_N2, color = GoNo, group = GoNo)) +
-  geom_point() + 
-  geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean_N2-2*(sd/nrow(ERP_tidy)), ymax = mean_N2+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1) +
-  facet_wrap(aes(Facets = HighLow)) +
-  ggtitle("Mean N2 by Cycle, calorie content, and Go vs No in the Balanced Block") +
-  ylim(-6, -2.5)
-
-aov_car(N2 ~ HighLow*GoNo*Cycle + Error(pp/HighLow*GoNo*Cycle),
-        data = Balanced_Cycles)
-```
-
-And then for the biased blocks.
-
-```{r}
-Bias_Cycles <- full_withERP %>%
-  select(pp,
-         HighGo_1_HighCalGo.allsites, HighGo_2_HighCalGo.allsites,
-         HighNo_1_LowCalGo.allsites, HighNo_2_LowCalGo.allsites,
-         LowGo_1_LowCalGo.allsites, LowGo_2_LowCalGo.allsites,
-         LowNo_1_HighCalGo.allsites, LowNo_2_HighCalGo.allsites) %>%
-  gather("Trial_Cycle_Block", "N2", HighGo_1_HighCalGo.allsites:LowNo_2_HighCalGo.allsites) %>%
-  separate(col = Trial_Cycle_Block, into = c("Trial", "Cycle", "Block"), sep = "_") %>%
-  separate(col = "Trial", into = c("HighLow", "GoNo"), sep = -2) %>%
-  group_by(HighLow, GoNo, Cycle)
-
-Bias_Cycles_summary <- Bias_Cycles %>%
-  summarise_at(., "N2", funs("mean_N2" = mean, sd))
-
-ggplot(Bias_Cycles_summary, aes(x = Cycle, y = mean_N2, color = GoNo, group = GoNo)) +
-  geom_point() + 
-  geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean_N2-2*(sd/nrow(ERP_tidy)), ymax = mean_N2+2*(sd/nrow(ERP_tidy))), inherit = TRUE, width = 0.1) +
-  facet_wrap(aes(Facets = HighLow)) +
-  ggtitle("Mean N2 by Cycle, calorie content, and Go vs No in the Biased Blocks") +
-  ylim(-6, -2.5)
-
-aov_car(N2 ~ HighLow*GoNo*Cycle + Error(pp/HighLow*GoNo*Cycle),
-        data = Bias_Cycles)
-```
-
-So the effects in the Balanced block are pretty much the same as in the Bias blocks: Main effect of Go vs No but no more. This seems to indicate that the training blocks don't do anything that the Balanced block doesn't also do...
-
-(NB: results do not change considerably when removing participants with no/reversed GNG effect)
-
-## With retaining "Electrode"
-
-We can of course use electrode as a factor as well.
-
-### For bias blocks
-
-```{r}
-Bias_Cycles_electrodes <- full_withERP %>%
-  select(pp,
-         High_Go.1.HighCalGo.Cz, High_Go.2.HighCalGo.Cz,
-         High_No.1.LowCalGo.Cz, High_No.2.LowCalGo.Cz,
-         Low_Go.1.LowCalGo.Cz, Low_Go.2.LowCalGo.Cz,
-         Low_No.1.HighCalGo.Cz, Low_No.2.HighCalGo.Cz,
-         High_Go.1.HighCalGo.FC1, High_Go.2.HighCalGo.FC1,
-         High_No.1.LowCalGo.FC1, High_No.2.LowCalGo.FC1,
-         Low_Go.1.LowCalGo.FC1, Low_Go.2.LowCalGo.FC1,
-         Low_No.1.HighCalGo.FC1, Low_No.2.HighCalGo.FC1,
-         High_Go.1.HighCalGo.FC2, High_Go.2.HighCalGo.FC2,
-         High_No.1.LowCalGo.FC2, High_No.2.LowCalGo.FC2,
-         Low_Go.1.LowCalGo.FC2, Low_Go.2.LowCalGo.FC2,
-         Low_No.1.HighCalGo.FC2, Low_No.2.HighCalGo.FC2,
-         High_Go.1.HighCalGo.Fz, High_Go.2.HighCalGo.Fz,
-         High_No.1.LowCalGo.Fz, High_No.2.LowCalGo.Fz,
-         Low_Go.1.LowCalGo.Fz, Low_Go.2.LowCalGo.Fz,
-         Low_No.1.HighCalGo.Fz, Low_No.2.HighCalGo.Fz) %>%
-  gather("Trial_Cycle_Block_Electrode", "N2", High_Go.1.HighCalGo.Cz:Low_No.2.HighCalGo.Fz) %>%
-  separate(col = "Trial_Cycle_Block_Electrode", into = c("HighLow", "GoNo", "Cycle", "Block", "Electrode"), sep = "([\\.\\_])")
-  
-
-Bias_Cycles_electrodes_summary <- Bias_Cycles_electrodes %>% 
-  group_by(HighLow, GoNo, Cycle, Electrode) %>% 
-  summarise_at(., "N2", funs("mean_N2" = mean, sd))
-
-ggplot(Bias_Cycles_electrodes_summary, aes(x = Cycle, y = mean_N2, color = GoNo, group = interaction(GoNo,HighLow), shape = HighLow)) +
-  geom_point(size = 3) + 
-  geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean_N2-2*(sd/nrow(ERP_tidy)), ymax = mean_N2+2*(sd/nrow(ERP_tidy))), width = 0.1) +
-  facet_wrap(aes(Facets = Electrode)) +
-  ggtitle("Mean N2 by Cycle, calorie content, electrode, and Go vs No in the Biased Blocks")
-
-aov_car(N2 ~ HighLow*GoNo*Cycle*Electrode + Error(pp/HighLow*GoNo*Cycle*Electrode),
-        data = Bias_Cycles_electrodes)
-```
-
-So this gives us (1) a main effect of Go-NoGo, (2) a main effect of Electrode and (3) an interaction between Go-NoGo and Electrode site, indicating that the Go-NoGo effect is more pronouned in some electrodes than others. No higher order interactions are significant, so there doesn't seem to be e.g. an effect of food on Go-NoGo effects in some electrodes. (Roughly judging from the graphs, Go-NoGo effects seem mpst pronounced in Cz)
-
-### For the balanced block
-
-```{r}
-Balanced_Cycles_electrodes <- full_withERP %>%
-  select(pp,
-         High_Go.1.Balanced.Cz, High_Go.2.Balanced.Cz,
-         High_No.1.Balanced.Cz, High_No.2.Balanced.Cz,
-         Low_Go.1.Balanced.Cz, Low_Go.2.Balanced.Cz,
-         Low_No.1.Balanced.Cz, Low_No.2.Balanced.Cz,
-         High_Go.1.Balanced.FC1, High_Go.2.Balanced.FC1,
-         High_No.1.Balanced.FC1, High_No.2.Balanced.FC1,
-         Low_Go.1.Balanced.FC1, Low_Go.2.Balanced.FC1,
-         Low_No.1.Balanced.FC1, Low_No.2.Balanced.FC1,
-         High_Go.1.Balanced.FC2, High_Go.2.Balanced.FC2,
-         High_No.1.Balanced.FC2, High_No.2.Balanced.FC2,
-         Low_Go.1.Balanced.FC2, Low_Go.2.Balanced.FC2,
-         Low_No.1.Balanced.FC2, Low_No.2.Balanced.FC2,
-         High_Go.1.Balanced.Fz, High_Go.2.Balanced.Fz,
-         High_No.1.Balanced.Fz, High_No.2.Balanced.Fz,
-         Low_Go.1.Balanced.Fz, Low_Go.2.Balanced.Fz,
-         Low_No.1.Balanced.Fz, Low_No.2.Balanced.Fz) %>%
-  gather("Trial_Cycle_Block_Electrode", "N2", High_Go.1.Balanced.Cz:Low_No.2.Balanced.Fz) %>%
-  separate(col = "Trial_Cycle_Block_Electrode", into = c("HighLow", "GoNo", "Cycle", "Block", "Electrode"), sep = "([\\.\\_])")
-  
-
-Balanced_Cycles_electrodes_summary <- Balanced_Cycles_electrodes %>% 
-  group_by(HighLow, GoNo, Cycle, Electrode) %>% 
-  summarise_at(., "N2", funs("mean_N2" = mean, sd))
-
-ggplot(Balanced_Cycles_electrodes_summary, aes(x = Cycle, y = mean_N2, color = GoNo, group = interaction(GoNo,HighLow), shape = HighLow)) +
-  geom_point(size = 3) + 
-  geom_line(stat = "identity") +
-  geom_errorbar(aes(ymin = mean_N2-2*(sd/nrow(ERP_tidy)), ymax = mean_N2+2*(sd/nrow(ERP_tidy))), width = 0.1) +
-  facet_wrap(aes(Facets = Electrode)) +
-  ggtitle("Mean N2 by Cycle, calorie content, electrode, and Go vs No in the Biased Blocks")
-
-aov_car(N2 ~ HighLow*GoNo*Cycle*Electrode + Error(pp/HighLow*GoNo*Cycle*Electrode),
-        data = Balanced_Cycles_electrodes)
-```
-
-Good luck interpreting these results...
-From a first glance it seems like Cz might contain some interesting trends: Possibly a main effect of Cycle there. 
-Problem: Only the one-way interactions between between Electrode and HighLow, GoNo, and Cycle are significant but no higher order interactions. (side note: when running an ANOVA with Cz data only, we don't get anything special out of it either, just a Go-NoGo effect and main effect of Cycle at p=.06)
-
-# Correlation tables
-Let's plot correlations between some variables of interest:
-
-```{r}
-GGally::ggpairs(full_withERP[ ,c("Daily_intake", "BMI", "overall_hunger", "total_in_lab", "baseline_RTbias", "HighNo_1_Balanced.allsites", "HighGo_1_Balanced.allsites", "ERPBaselineDiff_allsites", "N2change_HighGo", "N2change_HighNo", "N2change_LowGo", "N2change_LowNo")])
+```{r, echo=FALSE}
+# Out of curiosity, we can check the evaluations of different food items
+food_evals <- test_dats_raw %>% 
+  filter(!is.na(FoodEvalItems.RESP)) %>%
+  group_by(FoodPic) %>%
+  summarize(mean = mean(FoodEvalItems.RESP), sd = sd(FoodEvalItems.RESP))
+food_evals$FoodPic <- food_evals$FoodPic %>%
+  gsub(pattern = "img/FOOD/0", replacement = "")
+food_evals$FoodPic <- as.factor(food_evals$FoodPic) 
+food_evals %>%  mutate(FoodPic = dplyr::recode(FoodPic, "01" = "Croissant basket",
+                                                 "02" = "Waffle",
+                                                 "03" = "Croissants",
+                                                 "04" = "Chips bag",
+                                                 "05" = "Marble Cake",
+                                                 "06" = "Chocolate Donut",
+                                                 "07" = "Chocolate wrapped",
+                                                 "08" = "Cake piece",
+                                                 "09" = "Crackers",
+                                                 "10" = "Chocolate marshmallows",
+                                                 "11" = "Chocolate biscuits",
+                                                 "12" = "Chocolate with nuts",
+                                                 "13" = "Chocolate biscuits",
+                                                 "14" = "Chocolate whole",
+                                                 "15" = "Chocolate bar",
+                                                 "16" = "KitKat",
+                                                 "17" = "M and Ms",
+                                                 "18" = "Oreo",
+                                                 "19" = "Croissant",
+                                                 "20" = "Chocolate caramel bar",
+                                                 "21" = "Tomatoes whole",
+                                                 "22" = "Bell peppers",
+                                                 "23" = "Water melon",
+                                                 "24" = "Different vegetables",
+                                                 "25" = "Strawberries",
+                                                 "26" = "Oranges",
+                                                 "27" = "Cauliflower",
+                                                 "28" = "Broccoli",
+                                                 "29" = "Cucumbers",
+                                                 "30" = "Blood oranges",
+                                                 "31" = "Aspargus",
+                                                 "32" = "Champignons",
+                                                 "33" = "Cucumber sliced",
+                                                 "34" = "Tomatoes",
+                                                 "35" = "Pineapple",
+                                                 "36" = "Carrots",
+                                                 "37" = "Peas",
+                                                 "38" = "Zucchini",
+                                                 "39" = "Guantaloupe melon",
+                                                 "40" = "Bell pepper sliced"))
 ```
